@@ -1,0 +1,79 @@
+# grn configuration — local-first by default
+# Copy to ~/.grn/config.toml and edit values.
+
+[audio]
+# macOS ScreenCaptureKit
+source = "screencapturekit"
+sample_rate = 16000
+# Which audio device to capture (empty = default system output)
+device = ""
+
+[transcription]
+# "whisper-local" (default) or "cloud"
+engine = "whisper-local"
+
+[transcription.local]
+model_path = "~/.grn/models/ggml-base.en.bin"
+threads = 4
+language = "en"
+
+# [transcription.cloud]
+# provider = "deepgram"
+# api_key = ""
+# language = "en"
+
+[ai]
+# Default: Ollama running locally. No API key needed.
+# Alternatives: "openai", "claude"
+provider = "ollama"
+model = "llama3.1:8b"
+endpoint = "http://localhost:11434"
+temperature = 0.3
+max_tokens = 4096
+
+# --- Cloud alternatives (uncomment to switch) ---
+# [ai]
+# provider = "openai"
+# model = "gpt-4o"
+# api_key = ""
+# base_url = ""
+# temperature = 0.3
+# max_tokens = 4096
+
+# [ai]
+# provider = "claude"
+# model = "claude-sonnet-4-20250514"
+# api_key = ""
+# base_url = ""
+# temperature = 0.3
+# max_tokens = 4096
+
+[ci]
+check_interval = "15m"
+# "tui", "desktop", or "webhook"
+notification_method = "tui"
+webhook_url = ""
+
+[integrations.git]
+enabled = true
+watch_dirs = []
+
+[integrations.github]
+enabled = false
+api_token = ""
+repos = []
+
+[integrations.jira]
+enabled = false
+base_url = ""
+email = ""
+api_token = ""
+project_key = ""
+
+[integrations.linear]
+enabled = false
+api_key = ""
+team_id = ""
+
+[storage]
+db_path = "~/.grn/db.sqlite"
