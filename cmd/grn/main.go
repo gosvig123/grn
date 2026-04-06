@@ -24,7 +24,7 @@ func rootCmd() *cobra.Command {
 		Short: "Terminal-based meeting intelligence",
 	}
 	root.AddCommand(
-		listenCmd(), meetingsCmd(), showCmd(),
+		listenCmd(), devicesCmd(), meetingsCmd(), showCmd(),
 		searchCmd(), actionsCmd(), ciCmd(),
 		summarizeCmd(), setupCmd(), enhanceCmd(),
 	)
@@ -97,16 +97,6 @@ func setupCmd() *cobra.Command {
 			fmt.Println("✓", cfg.DBPath)
 			fmt.Println("\nReady. Run `grn listen` to start.")
 			return nil
-		},
-	}
-}
-
-func listenCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "listen",
-		Short: "Capture and transcribe system audio in real time",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("not implemented yet — coming in phase 2")
 		},
 	}
 }
