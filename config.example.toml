@@ -1,79 +1,51 @@
 # grn configuration — local-first by default
 # Copy to ~/.grn/config.toml and edit values.
 
+# Path to the SQLite database file
+db_path = "~/.grn/db.sqlite"
+
 [audio]
-# macOS ScreenCaptureKit
-source = "screencapturekit"
+# Audio capture backend. macOS: "screencapturekit"
+backend = "screencapturekit"
 sample_rate = 16000
-# Which audio device to capture (empty = default system output)
-device = ""
+channels = 1
 
 [transcription]
 # "whisper-local" (default) or "cloud"
 engine = "whisper-local"
-
-[transcription.local]
-model_path = "~/.grn/models/ggml-base.en.bin"
-threads = 4
+# Model name: "base.en", "small.en", "medium.en", "large-v3"
+model = "base.en"
 language = "en"
-
-# [transcription.cloud]
-# provider = "deepgram"
+# Required for cloud transcription engines
 # api_key = ""
-# language = "en"
+# endpoint = ""
 
 [ai]
-# Default: Ollama running locally. No API key needed.
-# Alternatives: "openai", "claude"
+# Default: Ollama running locally — no API key needed.
+# Alternatives: "openai", "anthropic"
 provider = "ollama"
 model = "llama3.1:8b"
 endpoint = "http://localhost:11434"
 temperature = 0.3
-max_tokens = 4096
-
-# --- Cloud alternatives (uncomment to switch) ---
-# [ai]
-# provider = "openai"
-# model = "gpt-4o"
+# Required for cloud AI providers
 # api_key = ""
-# base_url = ""
-# temperature = 0.3
-# max_tokens = 4096
-
-# [ai]
-# provider = "claude"
-# model = "claude-sonnet-4-20250514"
-# api_key = ""
-# base_url = ""
-# temperature = 0.3
-# max_tokens = 4096
 
 [ci]
-check_interval = "15m"
-# "tui", "desktop", or "webhook"
-notification_method = "tui"
-webhook_url = ""
-
-[integrations.git]
-enabled = true
-watch_dirs = []
-
-[integrations.github]
+# Enable CI pipeline monitoring
 enabled = false
-api_token = ""
-repos = []
+# How often to poll for CI status (e.g. "5m", "15m", "1h")
+poll_interval = "15m"
+# Show reminders for long-running pipelines
+reminders = true
+# Repositories to watch (e.g. ["owner/repo1", "owner/repo2"])
+watched_repos = []
+# Shell command to run for desktop notifications (e.g. "notify-send")
+# notify_command = ""
 
-[integrations.jira]
-enabled = false
-base_url = ""
-email = ""
-api_token = ""
-project_key = ""
-
-[integrations.linear]
-enabled = false
-api_key = ""
-team_id = ""
-
-[storage]
-db_path = "~/.grn/db.sqlite"
+[integrations]
+# GitHub personal access token
+github_token = ""
+# Calendar URL for meeting integration (iCal format)
+# calendar_url = ""
+# Slack bot token
+# slack_token = ""

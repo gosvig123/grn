@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -87,8 +88,13 @@ func Load() (Config, error) {
 		return cfg, nil
 	}
 
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+	meta, err := toml.DecodeFile(path, &cfg)
+	if err != nil {
 		return Config{}, err
+	}
+
+	for _, key := range meta.Undecoded() {
+		fmt.Fprintf(os.Stderr, "warning: unknown config key %q in %s\n", key, path)
 	}
 
 	return cfg, nil

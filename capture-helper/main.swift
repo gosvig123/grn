@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import ScreenCaptureKit
+import CoreGraphics
 
 enum CaptureMode: String {
     case mic, system, both
@@ -193,24 +194,91 @@ class MicRecorder {
     private let engine = AVAudioEngine()
     private var writer: WAVWriter?
     private let sampleRate: Double
+    private let requestedDevice: Int?
+    private var converter: AVAudioConverter?
 
     init(sampleRate: Double, deviceIndex: Int?) {
         self.sampleRate = sampleRate
         self.requestedDevice = deviceIndex
     }
-    private let requestedDevice: Int?
+
+    private func applyDeviceSelection() {
+        guard let idx = requestedDevice else { return }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size)
+        let count = Int(size) / MemoryLayout<AudioDeviceID>.size
+        var ids = [AudioDeviceID](repeating: 0, count: count)
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids)
+
+        let inputDevices = ids.filter { id -> Bool in
+            var inputAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreamConfiguration,
+                mScope: kAudioDevicePropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var inputSize: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(id, &inputAddr, 0, nil, &inputSize) == noErr, inputSize > 0 else { return false }
+            let bufList = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: 1)
+            defer { bufList.deallocate() }
+            guard AudioObjectGetPropertyData(id, &inputAddr, 0, nil, &inputSize, bufList) == noErr else { return false }
+            return bufList.pointee.mNumberBuffers > 0
+        }
+
+        guard idx < inputDevices.count else {
+            print("  warning: device index \(idx) out of range, using default")
+            return
+        }
+
+        let deviceID = inputDevices[idx]
+        var deviceIDVar = deviceID
+        var propAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let status = AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &propAddr, 0, nil,
+            UInt32(MemoryLayout<AudioDeviceID>.size), &deviceIDVar
+        )
+        if status == noErr {
+            print("  mic device set to index \(idx)")
+        } else {
+            print("  warning: failed to set mic device (err \(status))")
+        }
+    }
 
     func start(outputPath: String) throws {
+        applyDeviceSelection()
+
         let inputNode = engine.inputNode
         let hwFormat = inputNode.outputFormat(forBus: 0)
-        let hwRate = UInt32(hwFormat.sampleRate)
-        let hwCh = UInt16(hwFormat.channelCount)
-        print("  mic hw: \(hwRate)Hz \(hwCh)ch")
+        print("  mic hw: \(UInt32(hwFormat.sampleRate))Hz \(hwFormat.channelCount)ch")
 
-        writer = try WAVWriter(path: outputPath, sampleRate: hwRate, channels: hwCh)
+        let targetFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        writer = try WAVWriter(path: outputPath, sampleRate: UInt32(sampleRate), channels: 1)
+        converter = AVAudioConverter(from: hwFormat, to: targetFormat)
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
-            self?.writer?.write(pcmBuffer: buffer)
+            guard let self = self, let converter = self.converter else { return }
+            let ratio = self.sampleRate / hwFormat.sampleRate
+            let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
+            guard let converted = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return }
+            var error: NSError?
+            var consumed = false
+            converter.convert(to: converted, error: &error) { _, outStatus in
+                if consumed { outStatus.pointee = .noDataNow; return nil }
+                consumed = true
+                outStatus.pointee = .haveData
+                return buffer
+            }
+            if error == nil && converted.frameLength > 0 {
+                self.writer?.write(pcmBuffer: converted)
+            }
         }
 
         try engine.start()
@@ -286,6 +354,21 @@ class SystemAudioRecorder: NSObject, SCStreamOutput {
                     int16Data[i * 2] = UInt8(int16 & 0xFF)
                     int16Data[i * 2 + 1] = UInt8((int16 >> 8) & 0xFF)
                 }
+            } else if isFloat && bytesPerSample == 8 {
+                let doublePtr = rawPtr.bindMemory(to: Float64.self)
+                for i in 0..<numFrames {
+                    let sample = max(-1.0, min(1.0, Float(doublePtr[i * numChannels])))
+                    let int16 = Int16(sample * 32767.0)
+                    int16Data[i * 2] = UInt8(int16 & 0xFF)
+                    int16Data[i * 2 + 1] = UInt8((int16 >> 8) & 0xFF)
+                }
+            } else if !isFloat && bytesPerSample == 2 {
+                let int16Ptr = rawPtr.bindMemory(to: Int16.self)
+                for i in 0..<numFrames {
+                    let val = int16Ptr[i * numChannels]
+                    int16Data[i * 2] = UInt8(val & 0xFF)
+                    int16Data[i * 2 + 1] = UInt8((val >> 8) & 0xFF)
+                }
             }
         }
 
@@ -298,9 +381,70 @@ class SystemAudioRecorder: NSObject, SCStreamOutput {
     }
 }
 
+// MARK: - Permission Checks
+
+func stderrPrint(_ message: String) {
+    FileHandle.standardError.write((message + "\n").data(using: .utf8)!)
+}
+
+func checkMicPermission() {
+    let status = AVCaptureDevice.authorizationStatus(for: .audio)
+    switch status {
+    case .authorized:
+        return
+    case .notDetermined:
+        let sema = DispatchSemaphore(value: 0)
+        AVCaptureDevice.requestAccess(for: .audio) { _ in sema.signal() }
+        sema.wait()
+        if AVCaptureDevice.authorizationStatus(for: .audio) != .authorized {
+            stderrPrint("error: Microphone access denied.\n  Grant permission: System Settings → Privacy & Security → Microphone → enable GrnCapture")
+            exit(126)
+        }
+    case .denied, .restricted:
+        stderrPrint("error: Microphone access denied.\n  Grant permission: System Settings → Privacy & Security → Microphone → enable GrnCapture")
+        exit(126)
+    @unknown default:
+        return
+    }
+}
+
+func checkScreenRecordingPermission() {
+    if #available(macOS 15.0, *) {
+        if !CGPreflightScreenCaptureAccess() {
+            _ = CGRequestScreenCaptureAccess()
+            stderrPrint("error: Screen Recording access required for system audio capture.\n  A System Settings window should have opened — enable GrnCapture, then re-run.\n  Manual path: System Settings → Privacy & Security → Screen Recording → enable GrnCapture")
+            exit(126)
+        }
+    } else {
+        let sema = DispatchSemaphore(value: 0)
+        var denied = false
+        Task {
+            do {
+                _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            } catch {
+                denied = true
+            }
+            sema.signal()
+        }
+        sema.wait()
+        if denied {
+            stderrPrint("error: Screen Recording access required for system audio capture.\n  Manual path: System Settings → Privacy & Security → Screen Recording → enable GrnCapture")
+            exit(126)
+        }
+    }
+}
+
 // MARK: - Main
 
 let config = parseArgs()
+
+if config.mode == .mic || config.mode == .both {
+    checkMicPermission()
+}
+
+if config.mode == .system || config.mode == .both {
+    checkScreenRecordingPermission()
+}
 
 let micRecorder: MicRecorder? = (config.mode == .mic || config.mode == .both)
     ? MicRecorder(sampleRate: config.sampleRate, deviceIndex: config.deviceIndex) : nil

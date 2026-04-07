@@ -12,20 +12,19 @@ type Device struct {
 }
 
 func ListAudioDevices() ([]Device, error) {
-	cmd := exec.Command("ffmpeg", "-f", "avfoundation", "-list_devices", "true", "-i", "")
-	out, _ := cmd.CombinedOutput()
-
+	bin, err := findCaptureBinary()
+	if err != nil {
+		return nil, err
+	}
+	out, err := exec.Command(bin, "--list-devices").CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("list devices: %w", err)
+	}
 	var devices []Device
-	inAudio := false
 	for _, line := range strings.Split(string(out), "\n") {
-		if strings.Contains(line, "AVFoundation audio devices") {
-			inAudio = true
-			continue
+		if d := parseDeviceLine(line); d != nil {
+			devices = append(devices, *d)
 		}
-		if !inAudio {
-			continue
-		}
-		devices = parseDeviceLine(line, devices)
 	}
 	if len(devices) == 0 {
 		return nil, fmt.Errorf("no audio devices found")
@@ -33,24 +32,23 @@ func ListAudioDevices() ([]Device, error) {
 	return devices, nil
 }
 
-func parseDeviceLine(line string, devices []Device) []Device {
-	first := strings.Index(line, "]")
-	if first == -1 {
-		return devices
+func parseDeviceLine(line string) *Device {
+	trimmed := strings.TrimSpace(line)
+	if len(trimmed) < 3 || trimmed[0] != '[' {
+		return nil
 	}
-	rest := line[first+1:]
-	start := strings.Index(rest, "[")
-	end := strings.Index(rest, "]")
-	if start == -1 || end == -1 || end <= start+1 {
-		return devices
+	end := strings.Index(trimmed, "]")
+	if end == -1 {
+		return nil
 	}
 	var idx int
-	if _, err := fmt.Sscanf(rest[start+1:end], "%d", &idx); err != nil {
-		return devices
+	if _, err := fmt.Sscanf(trimmed[1:end], "%d", &idx); err != nil {
+		return nil
 	}
-	name := strings.TrimSpace(rest[end+1:])
+	name := strings.TrimSpace(trimmed[end+1:])
+	name = strings.TrimSuffix(name, " (default)")
 	if name == "" {
-		return devices
+		return nil
 	}
-	return append(devices, Device{Index: idx, Name: name})
+	return &Device{Index: idx, Name: name}
 }

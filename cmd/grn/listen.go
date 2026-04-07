@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/grn-dev/grn/internal/ai"
@@ -31,7 +32,7 @@ func listenCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&deviceIdx, "device", "d", 0, "Audio device index")
 	cmd.Flags().StringVarP(&title, "title", "t", "", "Session title")
 	cmd.Flags().StringVarP(&modelPath, "model", "m", "", "Whisper model path")
-	cmd.Flags().StringVar(&mode, "mode", "mic", "Capture mode: mic, system, both")
+	cmd.Flags().StringVar(&mode, "mode", "both", "Capture mode: mic, system, or both (default); \"both\" captures mic + system audio for meetings")
 	return cmd
 }
 
@@ -85,7 +86,10 @@ func runListen(deviceIdx int, title, modelPath string, mode capture.CaptureMode)
 
 	<-ctx.Done()
 	fmt.Println("\n● Stopping...")
-	recorder.Stop()
+	if err := recorder.Stop(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: capture did not exit cleanly: %v\n", err)
+		fmt.Fprintf(os.Stderr, "  audio files may be incomplete\n")
+	}
 
 	duration := time.Since(parseTime(meeting.StartedAt))
 	fmt.Printf("● Recorded %s\n", duration.Truncate(time.Second))
@@ -116,7 +120,10 @@ func startMeeting(store *db.DB, title, sessionDir string) (*db.Meeting, error) {
 }
 
 func postProcess(store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, recorder *capture.Recorder, modelPath string) error {
-	allSegments := transcribeStreams(recorder, meeting.ID, modelPath)
+	allSegments, transcribeErr := transcribeStreams(recorder, meeting.ID, modelPath)
+	if transcribeErr != nil {
+		return savePartial(store, meeting, transcribeErr)
+	}
 	if len(allSegments) == 0 {
 		return savePartial(store, meeting, fmt.Errorf("no audio to transcribe"))
 	}
@@ -133,24 +140,30 @@ func postProcess(store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, recor
 	return enhanceAndSave(store, pipeline, meeting, transcript)
 }
 
-func transcribeStreams(recorder *capture.Recorder, meetingID, modelPath string) []db.Segment {
+func transcribeStreams(recorder *capture.Recorder, meetingID, modelPath string) ([]db.Segment, error) {
 	var all []db.Segment
+	var errs []string
 	for _, src := range []struct{ path, speaker string }{
 		{recorder.MicPath(), "You"},
 		{recorder.SystemPath(), "Other"},
 	} {
 		if !fileExists(src.path) {
+			fmt.Printf("  skipping %s: file missing or empty (no audio captured)\n", filepath.Base(src.path))
 			continue
 		}
 		fmt.Printf("● Transcribing %s audio...\n", src.speaker)
 		segs, err := transcribeAs(src.path, modelPath, src.speaker)
 		if err != nil {
-			fmt.Printf("  warning: %s transcription failed: %v\n", src.speaker, err)
+			fmt.Fprintf(os.Stderr, "  error: %s transcription failed: %v\n", src.speaker, err)
+			errs = append(errs, fmt.Sprintf("%s: %v", src.speaker, err))
 			continue
 		}
 		all = append(all, toDBSegments(meetingID, segs)...)
 	}
-	return all
+	if len(all) == 0 && len(errs) > 0 {
+		return nil, fmt.Errorf("transcription failed: %s", strings.Join(errs, "; "))
+	}
+	return all, nil
 }
 
 func enhanceAndSave(store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, transcript string) error {

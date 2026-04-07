@@ -17,5 +17,7 @@ swiftc \
     "${SCRIPT_DIR}/main.swift" \
     -o "${APP_DIR}/MacOS/grn-capture"
 
+codesign --force --sign - --deep "${BUILD_DIR}/GrnCapture.app"
+
 echo "Built: ${BUILD_DIR}/GrnCapture.app"
 echo "Run:   ${APP_DIR}/MacOS/grn-capture --help"

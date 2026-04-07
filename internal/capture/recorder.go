@@ -23,6 +23,7 @@ type Recorder struct {
 	outputDir string
 	deviceIdx int
 	cmd       *exec.Cmd
+	waitCh    chan error
 }
 
 func NewRecorder(mode CaptureMode, outputDir string, deviceIdx int) *Recorder {
@@ -46,6 +47,19 @@ func (r *Recorder) Start(_ context.Context) error {
 	if err := r.cmd.Start(); err != nil {
 		return fmt.Errorf("start capture: %w", err)
 	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- r.cmd.Wait()
+	}()
+	select {
+	case err := <-errCh:
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 126 {
+			return fmt.Errorf("permission denied — check System Settings → Privacy & Security")
+		}
+		return fmt.Errorf("capture process failed to start: %v", err)
+	case <-time.After(500 * time.Millisecond):
+		r.waitCh = errCh
+	}
 	return nil
 }
 
@@ -54,13 +68,12 @@ func (r *Recorder) Stop() error {
 		return nil
 	}
 	syscall.Kill(r.cmd.Process.Pid, syscall.SIGINT)
-	done := make(chan error, 1)
-	go func() { done <- r.cmd.Wait() }()
 	select {
-	case <-done:
-		return nil
+	case err := <-r.waitCh:
+		return err
 	case <-time.After(5 * time.Second):
 		r.cmd.Process.Kill()
+		<-r.waitCh // drain
 		return fmt.Errorf("capture process did not exit cleanly")
 	}
 }

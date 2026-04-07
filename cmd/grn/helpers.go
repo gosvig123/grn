@@ -34,6 +34,9 @@ func parseTime(s string) time.Time {
 }
 
 func transcribeAs(audioPath, modelPath, speaker string) ([]transcribe.Segment, error) {
+	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("whisper model not found at %s (download with: grn setup)", modelPath)
+	}
 	segs, err := transcribe.TranscribeFile(audioPath, modelPath)
 	if err != nil {
 		return nil, err
@@ -48,7 +51,10 @@ func savePartial(store *db.DB, meeting *db.Meeting, origErr error) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	meeting.EndedAt = &now
 	store.UpdateMeeting(meeting)
-	return fmt.Errorf("transcription failed (audio saved): %w", origErr)
+	if meeting.AudioPath != nil {
+		fmt.Printf("  session saved (audio may be incomplete — check %s)\n", *meeting.AudioPath)
+	}
+	return fmt.Errorf("transcription failed: %w", origErr)
 }
 
 func toDBSegments(meetingID string, segs []transcribe.Segment) []db.Segment {

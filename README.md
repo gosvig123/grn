@@ -70,6 +70,17 @@ go install github.com/yourorg/grn/cmd/grn@latest
 
 Requires Go 1.22+. No CGO needed (pure-Go SQLite driver).
 
+### macOS audio capture (ScreenCaptureKit)
+
+The capture helper must be built and installed separately (requires Xcode command-line tools):
+
+```bash
+make install-capture
+```
+
+This compiles `GrnCapture.app`, signs it, and copies it to `~/.grn/GrnCapture.app`.
+The `grn listen` command locates the helper there automatically.
+
 ## CLI Commands
 
 ### `grn`
