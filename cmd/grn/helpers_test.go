@@ -18,6 +18,33 @@ func TestParseTimeValidRFC3339(t *testing.T) {
 	}
 }
 
+func TestSanitize(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"ascii lowercase", "hello world", "hello-world"},
+		{"ascii uppercase", "Hello World", "hello-world"},
+		{"digits preserved", "meeting 42", "meeting-42"},
+		{"hyphens preserved", "pre-call", "pre-call"},
+		{"special chars dropped", "a!b@c#d", "abcd"},
+		{"accented letters", "café résumé", "café-résumé"},
+		{"CJK preserved", "会議メモ", "会議メモ"},
+		{"mixed unicode", "Ñoño 2026", "ñoño-2026"},
+		{"underscore to hyphen", "my_meeting", "my-meeting"},
+		{"empty string", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitize(tt.input)
+			if got != tt.want {
+				t.Errorf("sanitize(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseTimeInvalidRFC3339(t *testing.T) {
 	_, err := parseTime("not-a-time")
 	if err == nil {

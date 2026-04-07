@@ -1,28 +1,32 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/grn-dev/grn/internal/db"
 	"github.com/grn-dev/grn/internal/transcribe"
 )
 
 func sanitize(s string) string {
-	out := make([]byte, 0, len(s))
-	for _, b := range []byte(s) {
-		if (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '-' {
-			out = append(out, b)
-		} else if b >= 'A' && b <= 'Z' {
-			out = append(out, b+32)
-		} else if b == ' ' {
-			out = append(out, '-')
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case unicode.IsLetter(r), unicode.IsDigit(r):
+			b.WriteRune(unicode.ToLower(r))
+		case r == ' ', r == '_':
+			b.WriteRune('-')
+		case r == '-':
+			b.WriteRune(r)
 		}
 	}
-	return string(out)
+	return b.String()
 }
 
 func defaultModelPath() (string, error) {
@@ -41,11 +45,11 @@ func parseTime(s string) (time.Time, error) {
 	return t, nil
 }
 
-func transcribeAs(audioPath, modelPath, speaker string) ([]transcribe.Segment, error) {
+func transcribeAs(ctx context.Context, audioPath, modelPath, speaker string) ([]transcribe.Segment, error) {
 	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("whisper model not found at %s (download with: grn setup)", modelPath)
 	}
-	segs, err := transcribe.TranscribeFile(audioPath, modelPath)
+	segs, err := transcribe.TranscribeFile(ctx, audioPath, modelPath)
 	if err != nil {
 		return nil, err
 	}

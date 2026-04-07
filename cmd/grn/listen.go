@@ -115,7 +115,10 @@ func runListen(deviceIdx int, title, modelPath string, mode capture.CaptureMode)
 		fmt.Printf("● Recorded %s\n", duration.Truncate(time.Second))
 	}
 
-	return postProcess(store, pipeline, meeting, recorder, modelPath)
+	postCtx, postCancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer postCancel()
+
+	return postProcess(postCtx, store, pipeline, meeting, recorder, modelPath)
 }
 
 func createSessionDir(title string) (string, error) {
@@ -146,8 +149,8 @@ func startMeeting(store *db.DB, title, sessionDir string) (*db.Meeting, error) {
 	return meeting, nil
 }
 
-func postProcess(store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, recorder *capture.Recorder, modelPath string) error {
-	allSegments, transcribeErr := transcribeStreams(recorder, meeting.ID, modelPath)
+func postProcess(ctx context.Context, store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, recorder *capture.Recorder, modelPath string) error {
+	allSegments, transcribeErr := transcribeStreams(ctx, recorder, meeting.ID, modelPath)
 	if transcribeErr != nil {
 		return savePartial(store, meeting, transcribeErr)
 	}
@@ -167,7 +170,7 @@ func postProcess(store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, recor
 	return enhanceAndSave(store, pipeline, meeting, transcript)
 }
 
-func transcribeStreams(recorder *capture.Recorder, meetingID, modelPath string) ([]db.Segment, error) {
+func transcribeStreams(ctx context.Context, recorder *capture.Recorder, meetingID, modelPath string) ([]db.Segment, error) {
 	var all []db.Segment
 	var errs []string
 	for _, src := range []struct{ path, speaker string }{
@@ -179,7 +182,7 @@ func transcribeStreams(recorder *capture.Recorder, meetingID, modelPath string) 
 			continue
 		}
 		fmt.Printf("● Transcribing %s audio...\n", src.speaker)
-		segs, err := transcribeAs(src.path, modelPath, src.speaker)
+		segs, err := transcribeAs(ctx, src.path, modelPath, src.speaker)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  error: %s transcription failed: %v\n", src.speaker, err)
 			errs = append(errs, fmt.Sprintf("%s: %v", src.speaker, err))
