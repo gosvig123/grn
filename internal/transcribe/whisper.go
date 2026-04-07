@@ -1,6 +1,7 @@
 package transcribe
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -29,12 +30,12 @@ type whisperSegment struct {
 
 var whisperTimestampPattern = regexp.MustCompile(`^\d{2}:\d{2}:\d{2},\d{3}$`)
 
-func TranscribeFile(audioPath, modelPath string) ([]Segment, error) {
+func TranscribeFile(ctx context.Context, audioPath, modelPath string) ([]Segment, error) {
 	bin, err := findWhisperBinary()
 	if err != nil {
 		return nil, err
 	}
-	out, err := runWhisper(bin, audioPath, modelPath)
+	out, err := runWhisper(ctx, bin, audioPath, modelPath)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +51,7 @@ func findWhisperBinary() (string, error) {
 	return "", fmt.Errorf("whisper-cpp not found in PATH (brew install whisper-cpp)")
 }
 
-func runWhisper(bin, audioPath, modelPath string) ([]byte, error) {
+func runWhisper(ctx context.Context, bin, audioPath, modelPath string) ([]byte, error) {
 	args := []string{
 		"-m", modelPath,
 		"-f", audioPath,
@@ -58,7 +59,7 @@ func runWhisper(bin, audioPath, modelPath string) ([]byte, error) {
 		"-of", "-",
 		"-np",
 	}
-	cmd := exec.Command(bin, args...)
+	cmd := exec.CommandContext(ctx, bin, args...)
 	out, err := cmd.Output()
 	if err != nil {
 		stderr := ""
