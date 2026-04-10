@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -109,15 +110,42 @@ func (r *Recorder) SystemPath() string {
 }
 
 func findCaptureBinary() (string, error) {
+	if override := strings.TrimSpace(os.Getenv("GRN_CAPTURE_HELPER_PATH")); override != "" {
+		if _, err := os.Stat(override); err == nil {
+			return override, nil
+		}
+		return "", fmt.Errorf("capture helper override not found: %s", override)
+	}
+
 	home, _ := os.UserHomeDir()
-	paths := []string{
+	paths := bundleCaptureCandidates()
+	paths = append(paths,
 		filepath.Join(home, ".grn", "GrnCapture.app", "Contents", "MacOS", "grn-capture"),
 		"./build/GrnCapture.app/Contents/MacOS/grn-capture",
-	}
+	)
 	for _, p := range paths {
+		if p == "" {
+			continue
+		}
 		if _, err := os.Stat(p); err == nil {
 			return p, nil
 		}
 	}
-	return "", fmt.Errorf("grn-capture not found (run: make build-capture)")
+	return "", fmt.Errorf("grn-capture not found (set GRN_CAPTURE_HELPER_PATH or run: make build-capture)")
+}
+
+func bundleCaptureCandidates() []string {
+	exePath, err := os.Executable()
+	if err != nil {
+		return nil
+	}
+	resolvedPath, err := filepath.EvalSymlinks(exePath)
+	if err == nil {
+		exePath = resolvedPath
+	}
+	exeDir := filepath.Dir(exePath)
+	return []string{
+		filepath.Clean(filepath.Join(exeDir, "..", "GrnCapture.app", "Contents", "MacOS", "grn-capture")),
+		filepath.Clean(filepath.Join(exeDir, "..", "Resources", "GrnCapture.app", "Contents", "MacOS", "grn-capture")),
+	}
 }
