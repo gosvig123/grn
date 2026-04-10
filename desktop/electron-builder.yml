@@ -1,0 +1,14 @@
+appId: dev.grn.desktop
+productName: Grn
+files:
+  - dist/**
+  - dist-electron/**
+extraResources:
+  - from: ../build/grn
+    to: bin/grn
+  - from: ../build/GrnCapture.app
+    to: GrnCapture.app
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
