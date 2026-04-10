@@ -7,8 +7,8 @@ import (
 )
 
 type Device struct {
-	Index int
-	Name  string
+	Index int    `json:"index"`
+	Name  string `json:"name"`
 }
 
 func ListAudioDevices() ([]Device, error) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,26 +28,35 @@ func rootCmd() *cobra.Command {
 	root.AddCommand(
 		listenCmd(), devicesCmd(), meetingsCmd(), showCmd(),
 		searchCmd(), actionsCmd(), ciCmd(),
-		summarizeCmd(), setupCmd(), enhanceCmd(),
+		summarizeCmd(), setupCmd(), enhanceCmd(), appCmd(),
 	)
 	return root
 }
 
 func loadDeps() (config.Config, *db.DB, *ai.Pipeline, error) {
-	cfg, err := config.Load()
-	if err != nil {
-		return cfg, nil, nil, fmt.Errorf("load config: %w", err)
-	}
-	store, err := openDB(cfg)
+	cfg, store, err := loadStore()
 	if err != nil {
 		return cfg, nil, nil, err
 	}
 	provider, err := ai.NewProvider(cfg.AI)
 	if err != nil {
+		store.Close()
 		return cfg, nil, nil, err
 	}
 	pipeline := ai.NewPipeline(provider, cfg.AI.Temp)
 	return cfg, store, pipeline, nil
+}
+
+func loadStore() (config.Config, *db.DB, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return cfg, nil, fmt.Errorf("load config: %w", err)
+	}
+	store, err := openDB(cfg)
+	if err != nil {
+		return cfg, nil, err
+	}
+	return cfg, store, nil
 }
 
 func openDB(cfg config.Config) (*db.DB, error) {
@@ -74,6 +84,12 @@ func grnDir() (string, error) {
 
 func cmdContext() context.Context {
 	return context.Background()
+}
+
+func writeJSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
 }
 
 func setupCmd() *cobra.Command {
