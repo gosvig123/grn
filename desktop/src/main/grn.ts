@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { app } from 'electron'
-import { getRecordingState, setRecordingState } from './state'
+import { getRecordingState, setRecordingState, type RecordingState } from './state'
 
 export type Device = {
   index: number
@@ -57,6 +57,13 @@ export type MeetingDetail = {
 type DevicesResponse = { devices: Device[] }
 type MeetingsResponse = { meetings: MeetingListItem[] }
 type MeetingResponse = { meeting: MeetingDetail }
+type RecordingProtocolEvent = {
+  type: 'recording.started' | 'recording.stopping' | 'recording.processing' | 'recording.completed' | 'recording.failed'
+  meetingId: string
+  title: string
+  status: MeetingStatus
+  error?: string
+}
 
 let recordingChild: ReturnType<typeof spawn> | null = null
 
@@ -89,34 +96,36 @@ export function startRecording(input: { title: string; device: number; mode: str
   if (input.modelPath) args.push('--model', input.modelPath)
 
   let stderr = ''
+  let stdoutBuffer = ''
+  let sawTerminalEvent = false
+  let sawProtocolEvent = false
+  let protocolError: string | null = null
   const child = spawn(resolveGrnBinary(), args, {
     env: childEnv(),
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   recordingChild = child
-  setRecordingState({ status: 'recording', title: input.title })
-
-  const markProcessing = () => {
-    const current = getRecordingState()
-    if (current.status === 'stopping') {
-      setRecordingState({ status: 'processing', title: current.title })
-    }
-  }
 
   child.stdout.on('data', (chunk) => {
-    const text = chunk.toString()
-    if (text.includes('Stopping...')) {
-      setRecordingState({ status: 'stopping', title: input.title })
-      return
-    }
-    if (text.includes('Transcribing') || text.includes('Enhancing')) {
-      setRecordingState({ status: 'processing', title: input.title })
+    stdoutBuffer += chunk.toString()
+    const lines = stdoutBuffer.split('\n')
+    stdoutBuffer = lines.pop() ?? ''
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      const event = parseRecordingProtocolEvent(trimmed)
+      if (!event) {
+        protocolError = `Invalid recording protocol event: ${trimmed}`
+        continue
+      }
+      sawProtocolEvent = true
+      if (isTerminalProtocolEvent(event.type)) sawTerminalEvent = true
+      setRecordingState(recordingStateFromEvent(event))
     }
   })
 
   child.stderr.on('data', (chunk) => {
     stderr += chunk.toString()
-    markProcessing()
   })
 
   child.on('error', (error) => {
@@ -126,7 +135,20 @@ export function startRecording(input: { title: string; device: number; mode: str
 
   child.on('exit', (code, signal) => {
     recordingChild = null
-    if (code === 0) {
+    if (sawTerminalEvent) return
+    if (protocolError) {
+      setRecordingState({ status: 'error', title: input.title, error: protocolError })
+      return
+    }
+    if (stdoutBuffer.trim()) {
+      setRecordingState({
+        status: 'error',
+        title: input.title,
+        error: `Incomplete recording protocol event: ${stdoutBuffer.trim()}`,
+      })
+      return
+    }
+    if (code === 0 && !sawProtocolEvent) {
       setRecordingState({ status: 'idle' })
       return
     }
@@ -197,6 +219,51 @@ function childEnv(): NodeJS.ProcessEnv {
     ...process.env,
     PATH: Array.from(new Set(pathParts.filter(Boolean))).join(':'),
   }
+}
+
+function parseRecordingProtocolEvent(line: string): RecordingProtocolEvent | null {
+  try {
+    const parsed = JSON.parse(line) as Partial<RecordingProtocolEvent>
+    if (!parsed.type || !parsed.meetingId || !parsed.title || !parsed.status) return null
+    if (!isProtocolEventType(parsed.type)) return null
+    return parsed as RecordingProtocolEvent
+  } catch {
+    return null
+  }
+}
+
+function isProtocolEventType(value: string): value is RecordingProtocolEvent['type'] {
+  return [
+    'recording.started',
+    'recording.stopping',
+    'recording.processing',
+    'recording.completed',
+    'recording.failed',
+  ].includes(value)
+}
+
+function isTerminalProtocolEvent(type: RecordingProtocolEvent['type']): boolean {
+  return type === 'recording.completed' || type === 'recording.failed'
+}
+
+function recordingStateFromEvent(event: RecordingProtocolEvent): RecordingState {
+  const base = { meetingId: event.meetingId, title: event.title }
+  switch (event.type) {
+    case 'recording.started':
+      return { ...base, status: 'recording' }
+    case 'recording.stopping':
+      return { ...base, status: 'stopping' }
+    case 'recording.processing':
+      return { ...base, status: 'processing' }
+    case 'recording.completed':
+      return { ...base, status: 'idle' }
+    case 'recording.failed':
+      return { ...base, status: 'error', error: event.error ?? protocolFailureMessage(event.status) }
+  }
+}
+
+function protocolFailureMessage(status: MeetingStatus): string {
+  return status.capture.failureMessage ?? status.processing.failureMessage ?? 'Recording failed'
 }
 
 function formatChildError(stderr: string, code: number | null, signal: NodeJS.Signals | null): string {

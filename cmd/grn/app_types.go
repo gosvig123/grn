@@ -1,6 +1,11 @@
 package main
 
-import "github.com/grn-dev/grn/internal/db"
+import (
+	"encoding/json"
+	"os"
+
+	"github.com/grn-dev/grn/internal/db"
+)
 
 type appDevicesResponse struct {
 	Devices []captureDevice `json:"devices"`
@@ -68,6 +73,52 @@ type appMeetingSegment struct {
 	EndSec   float64 `json:"endSec"`
 	Speaker  string  `json:"speaker"`
 	Text     string  `json:"text"`
+}
+
+type appRecordingEventName string
+
+const (
+	appRecordingStartedEvent    appRecordingEventName = "recording.started"
+	appRecordingStoppingEvent   appRecordingEventName = "recording.stopping"
+	appRecordingProcessingEvent appRecordingEventName = "recording.processing"
+	appRecordingCompletedEvent  appRecordingEventName = "recording.completed"
+	appRecordingFailedEvent     appRecordingEventName = "recording.failed"
+)
+
+type appRecordingEvent struct {
+	Type      appRecordingEventName `json:"type"`
+	MeetingID string                `json:"meetingId"`
+	Title     string                `json:"title"`
+	Status    appMeetingStatus      `json:"status"`
+	Error     *string               `json:"error,omitempty"`
+}
+
+type appRecordingEventEmitter struct {
+	enc *json.Encoder
+}
+
+func newAppRecordingEventEmitter(enabled bool) *appRecordingEventEmitter {
+	if !enabled {
+		return nil
+	}
+	return &appRecordingEventEmitter{enc: json.NewEncoder(os.Stdout)}
+}
+
+func (e *appRecordingEventEmitter) emit(name appRecordingEventName, meeting db.Meeting, err error) error {
+	if e == nil {
+		return nil
+	}
+	event := appRecordingEvent{
+		Type:      name,
+		MeetingID: meeting.ID,
+		Title:     meeting.Title,
+		Status:    appMeetingStatusFor(meeting),
+	}
+	if err != nil {
+		message := err.Error()
+		event.Error = &message
+	}
+	return e.enc.Encode(event)
 }
 
 func appMeetingStatusFor(meeting db.Meeting) appMeetingStatus {

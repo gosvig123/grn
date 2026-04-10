@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 type RecordingState = {
   status: 'idle' | 'recording' | 'stopping' | 'processing' | 'error'
+  meetingId?: string
   title?: string
   error?: string
 }

@@ -80,14 +80,14 @@ func setMeetingProcessingStatus(meeting *db.Meeting, status db.ProcessingStatus,
 	}
 }
 
-func saveProcessingFailure(store *db.DB, meeting *db.Meeting, origErr error) error {
+func saveProcessingFailure(store *db.DB, meeting *db.Meeting, origErr error, emitter *appRecordingEventEmitter) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	if meeting.EndedAt == nil {
 		meeting.EndedAt = &now
 	}
 	setMeetingProcessingStatus(meeting, db.ProcessingStatusFailed, now, origErr)
 	updateErr := store.UpdateMeeting(meeting)
-	if updateErr == nil && meeting.AudioPath != nil {
+	if updateErr == nil && meeting.AudioPath != nil && emitter == nil {
 		fmt.Printf("  session saved (audio may be incomplete — check %s)\n", *meeting.AudioPath)
 	}
 	if updateErr != nil {
@@ -95,6 +95,9 @@ func saveProcessingFailure(store *db.DB, meeting *db.Meeting, origErr error) err
 			fmt.Errorf("transcription failed: %w", origErr),
 			fmt.Errorf("save partial meeting: %w", updateErr),
 		)
+	}
+	if err := emitter.emit(appRecordingFailedEvent, *meeting, origErr); err != nil {
+		return err
 	}
 	return fmt.Errorf("transcription failed: %w", origErr)
 }

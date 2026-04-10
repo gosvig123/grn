@@ -7,6 +7,7 @@ export type RecordingStatus =
 
 export type RecordingState = {
   status: RecordingStatus
+  meetingId?: string
   title?: string
   error?: string
 }

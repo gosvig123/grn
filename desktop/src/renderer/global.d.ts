@@ -51,21 +51,25 @@ declare global {
       recording: {
         start(input: { title: string; device: number; mode: string; modelPath?: string }): Promise<{
           status: 'idle' | 'recording' | 'stopping' | 'processing' | 'error'
+          meetingId?: string
           title?: string
           error?: string
         }>
         stop(): Promise<{
           status: 'idle' | 'recording' | 'stopping' | 'processing' | 'error'
+          meetingId?: string
           title?: string
           error?: string
         }>
         getStatus(): Promise<{
           status: 'idle' | 'recording' | 'stopping' | 'processing' | 'error'
+          meetingId?: string
           title?: string
           error?: string
         }>
         onStatusChanged(listener: (state: {
           status: 'idle' | 'recording' | 'stopping' | 'processing' | 'error'
+          meetingId?: string
           title?: string
           error?: string
         }) => void): () => void

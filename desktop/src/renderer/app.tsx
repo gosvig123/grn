@@ -67,18 +67,26 @@ export function App() {
   const [device, setDevice] = useState(0)
   const [mode, setMode] = useState('both')
 
-  async function refreshMeetings() {
+  function applySelectedMeetingId(id: string | null) {
+    selectedMeetingIdRef.current = id
+    setSelectedMeetingId(id)
+  }
+
+  async function refreshMeetings(preferredMeetingId?: string | null) {
     const items = await window.grn.meetings.list()
     setMeetings(items)
-    if (!selectedMeetingIdRef.current && items[0]) {
-      selectedMeetingIdRef.current = items[0].id
-      setSelectedMeetingId(items[0].id)
+    const nextId = preferredMeetingId ?? selectedMeetingIdRef.current ?? items[0]?.id ?? null
+    if (!nextId) {
+      applySelectedMeetingId(null)
+      setSelectedMeeting(null)
+      return
     }
+    const resolvedId = items.some((meeting) => meeting.id === nextId) ? nextId : items[0]?.id ?? null
+    applySelectedMeetingId(resolvedId)
   }
 
   async function loadMeeting(id: string) {
-    selectedMeetingIdRef.current = id
-    setSelectedMeetingId(id)
+    applySelectedMeetingId(id)
     setSelectedMeeting(await window.grn.meetings.show(id))
   }
 
@@ -87,9 +95,15 @@ export function App() {
     const dispose = window.grn.recording.onStatusChanged(async (state) => {
       if (disposed) return
       setRecording(state)
-      if (state.status === 'processing' || state.status === 'idle' || state.status === 'error') {
+      const meetingId = state.meetingId ?? selectedMeetingIdRef.current
+      if (state.meetingId) applySelectedMeetingId(state.meetingId)
+      if (meetingId) {
+        await refreshMeetings(meetingId)
+        if (!disposed) await loadMeeting(meetingId)
+        return
+      }
+      if (state.status === 'idle' || state.status === 'error') {
         await refreshMeetings()
-        if (selectedMeetingIdRef.current) await loadMeeting(selectedMeetingIdRef.current)
       }
     })
 
@@ -105,10 +119,10 @@ export function App() {
         setMeetings(meetingList)
         setRecording(recordingState)
         if (deviceList[0]) setDevice(deviceList[0].index)
-        if (meetingList[0]) {
-          selectedMeetingIdRef.current = meetingList[0].id
-          setSelectedMeetingId(meetingList[0].id)
-          setSelectedMeeting(await window.grn.meetings.show(meetingList[0].id))
+        const initialMeetingId = recordingState.meetingId ?? meetingList[0]?.id ?? null
+        applySelectedMeetingId(initialMeetingId)
+        if (initialMeetingId) {
+          setSelectedMeeting(await window.grn.meetings.show(initialMeetingId))
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
@@ -182,6 +196,7 @@ export function App() {
           <div className="label">Status</div>
           <div className={`status-pill ${recording.status}`}>{recording.status}</div>
           {recording.title ? <div className="muted">{recording.title}</div> : null}
+          {recording.meetingId ? <div className="muted">{recording.meetingId}</div> : null}
           {recording.error ? <div className="error-text">{recording.error}</div> : null}
         </div>
       </aside>

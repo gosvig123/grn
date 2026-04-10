@@ -61,6 +61,7 @@ func runListen(deviceIdx int, title, modelPath string, mode capture.CaptureMode,
 		return err
 	}
 	defer store.Close()
+	emitter := newAppRecordingEventEmitter(suppressProcessingFailure)
 
 	if modelPath == "" {
 		modelPath, err = defaultModelPath()
@@ -81,36 +82,58 @@ func runListen(deviceIdx int, title, modelPath string, mode capture.CaptureMode,
 		return err
 	}
 
-	fmt.Printf("● Recording to %s (press Ctrl-C to stop)\n", sessionDir)
-	fmt.Printf("  mode: %s, device: [%d]\n\n", mode, deviceIdx)
+	if emitter == nil {
+		fmt.Printf("● Recording to %s (press Ctrl-C to stop)\n", sessionDir)
+		fmt.Printf("  mode: %s, device: [%d]\n\n", mode, deviceIdx)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	recorder := capture.NewRecorder(mode, sessionDir, deviceIdx)
 	if err := recorder.Start(ctx); err != nil {
+		if failErr := failMeetingCapture(store, meeting, err, emitter); failErr != nil {
+			return failErr
+		}
+		return err
+	}
+	if err := emitter.emit(appRecordingStartedEvent, *meeting, nil); err != nil {
 		return err
 	}
 
 	select {
 	case <-ctx.Done():
-		fmt.Println("\n● Stopping...")
+		if emitter == nil {
+			fmt.Println("\n● Stopping...")
+		}
+		if err := emitter.emit(appRecordingStoppingEvent, *meeting, nil); err != nil {
+			return err
+		}
 		if err := recorder.Stop(); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: capture did not exit cleanly: %v\n", err)
 			fmt.Fprintf(os.Stderr, "  audio files may be incomplete\n")
 		}
 	case err := <-recorder.Done():
 		if err != nil {
+			if failErr := failMeetingCapture(store, meeting, fmt.Errorf("capture stopped unexpectedly: %w", err), emitter); failErr != nil {
+				return failErr
+			}
 			return fmt.Errorf("capture stopped unexpectedly: %w", err)
 		}
-		return fmt.Errorf("capture stopped unexpectedly")
+		unexpectedErr := fmt.Errorf("capture stopped unexpectedly")
+		if failErr := failMeetingCapture(store, meeting, unexpectedErr, emitter); failErr != nil {
+			return failErr
+		}
+		return unexpectedErr
 	}
 
 	startedAt, err := parseTime(meeting.StartedAt)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not parse start time: %v\n", err)
-		fmt.Println("● Recorded")
-	} else {
+		if emitter == nil {
+			fmt.Println("● Recorded")
+		}
+	} else if emitter == nil {
 		duration := time.Since(startedAt)
 		fmt.Printf("● Recorded %s\n", duration.Truncate(time.Second))
 	}
@@ -119,9 +142,8 @@ func runListen(deviceIdx int, title, modelPath string, mode capture.CaptureMode,
 	meeting.EndedAt = &endedAt
 	if !hasCapturedAudio(recorder) {
 		captureErr := fmt.Errorf("no audio captured")
-		setMeetingCaptureStatus(meeting, db.CaptureStatusFailed, endedAt, captureErr)
-		if err := store.UpdateMeeting(meeting); err != nil {
-			return fmt.Errorf("mark meeting capture failed: %w", err)
+		if err := failMeetingCapture(store, meeting, captureErr, emitter); err != nil {
+			return err
 		}
 		return captureErr
 	}
@@ -130,16 +152,32 @@ func runListen(deviceIdx int, title, modelPath string, mode capture.CaptureMode,
 	if err := store.UpdateMeeting(meeting); err != nil {
 		return fmt.Errorf("mark meeting captured: %w", err)
 	}
+	if err := emitter.emit(appRecordingProcessingEvent, *meeting, nil); err != nil {
+		return err
+	}
 
 	postCtx, postCancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer postCancel()
 
-	err = postProcess(postCtx, store, pipeline, meeting, recorder, modelPath)
+	err = postProcess(postCtx, store, pipeline, meeting, recorder, modelPath, emitter)
 	if err != nil && suppressProcessingFailure {
 		fmt.Fprintf(os.Stderr, "warning: post-processing failed after capture: %v\n", err)
 		return nil
 	}
 	return err
+}
+
+func failMeetingCapture(store *db.DB, meeting *db.Meeting, captureErr error, emitter *appRecordingEventEmitter) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	meeting.EndedAt = &now
+	setMeetingCaptureStatus(meeting, db.CaptureStatusFailed, now, captureErr)
+	if err := store.UpdateMeeting(meeting); err != nil {
+		return fmt.Errorf("mark meeting capture failed: %w", err)
+	}
+	if err := emitter.emit(appRecordingFailedEvent, *meeting, captureErr); err != nil {
+		return err
+	}
+	return nil
 }
 
 func createSessionDir(title string) (string, error) {
@@ -174,28 +212,32 @@ func startMeeting(store *db.DB, title, sessionDir string) (*db.Meeting, error) {
 	return meeting, nil
 }
 
-func postProcess(ctx context.Context, store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, recorder *capture.Recorder, modelPath string) error {
-	allSegments, transcribeErr := transcribeStreams(ctx, recorder, meeting.ID, modelPath)
+func postProcess(ctx context.Context, store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, recorder *capture.Recorder, modelPath string, emitter *appRecordingEventEmitter) error {
+	allSegments, transcribeErr := transcribeStreams(ctx, recorder, meeting.ID, modelPath, emitter)
 	if transcribeErr != nil {
-		return saveProcessingFailure(store, meeting, transcribeErr)
+		return saveProcessingFailure(store, meeting, transcribeErr, emitter)
 	}
 	if len(allSegments) == 0 {
-		return saveProcessingFailure(store, meeting, fmt.Errorf("no audio to transcribe"))
+		return saveProcessingFailure(store, meeting, fmt.Errorf("no audio to transcribe"), emitter)
 	}
 
-	fmt.Printf("● Got %d segments\n", len(allSegments))
+	if emitter == nil {
+		fmt.Printf("● Got %d segments\n", len(allSegments))
+	}
 	if err := store.InsertSegments(allSegments); err != nil {
 		return fmt.Errorf("save segments: %w", err)
 	}
 
 	transcript := formatTranscript(allSegments)
-	fmt.Println("\n── Transcript ──────────────────────────")
-	fmt.Println(transcript)
+	if emitter == nil {
+		fmt.Println("\n── Transcript ──────────────────────────")
+		fmt.Println(transcript)
+	}
 
-	return enhanceAndSave(store, pipeline, meeting, transcript)
+	return enhanceAndSave(store, pipeline, meeting, transcript, emitter)
 }
 
-func transcribeStreams(ctx context.Context, recorder *capture.Recorder, meetingID, modelPath string) ([]db.Segment, error) {
+func transcribeStreams(ctx context.Context, recorder *capture.Recorder, meetingID, modelPath string, emitter *appRecordingEventEmitter) ([]db.Segment, error) {
 	var all []db.Segment
 	var errs []string
 	for _, src := range []struct{ path, speaker string }{
@@ -203,10 +245,14 @@ func transcribeStreams(ctx context.Context, recorder *capture.Recorder, meetingI
 		{recorder.SystemPath(), "Other"},
 	} {
 		if !fileExists(src.path) {
-			fmt.Printf("  skipping %s: file missing or empty (no audio captured)\n", filepath.Base(src.path))
+			if emitter == nil {
+				fmt.Printf("  skipping %s: file missing or empty (no audio captured)\n", filepath.Base(src.path))
+			}
 			continue
 		}
-		fmt.Printf("● Transcribing %s audio...\n", src.speaker)
+		if emitter == nil {
+			fmt.Printf("● Transcribing %s audio...\n", src.speaker)
+		}
 		segs, err := transcribeAs(ctx, src.path, modelPath, src.speaker)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  error: %s transcription failed: %v\n", src.speaker, err)
@@ -253,8 +299,10 @@ func sortSegmentsChronologically(segments []db.Segment) {
 	}
 }
 
-func enhanceAndSave(store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, transcript string) error {
-	fmt.Println("── Enhancing with AI... ─────────────────")
+func enhanceAndSave(store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, transcript string, emitter *appRecordingEventEmitter) error {
+	if emitter == nil {
+		fmt.Println("── Enhancing with AI... ─────────────────")
+	}
 	extraction, summary, err := pipeline.Run(cmdContext(), transcript, "")
 	if err != nil {
 		meeting.Transcript = &transcript
@@ -266,6 +314,9 @@ func enhanceAndSave(store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, tr
 				fmt.Errorf("save transcript: %w", updateErr),
 			)
 		}
+		if emitErr := emitter.emit(appRecordingFailedEvent, *meeting, err); emitErr != nil {
+			return emitErr
+		}
 		return fmt.Errorf("enhance failed (transcript saved): %w", err)
 	}
 
@@ -276,12 +327,17 @@ func enhanceAndSave(store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, tr
 	if err := store.UpdateMeeting(meeting); err != nil {
 		return fmt.Errorf("update meeting: %w", err)
 	}
-
-	fmt.Println("\n── Notes ───────────────────────────────")
-	fmt.Println(summary)
-	if len(extraction.ActionItems) > 0 {
-		fmt.Printf("\n● %d action items extracted.\n", len(extraction.ActionItems))
+	if err := emitter.emit(appRecordingCompletedEvent, *meeting, nil); err != nil {
+		return err
 	}
-	fmt.Printf("● Saved: %s\n", meeting.ID)
+
+	if emitter == nil {
+		fmt.Println("\n── Notes ───────────────────────────────")
+		fmt.Println(summary)
+		if len(extraction.ActionItems) > 0 {
+			fmt.Printf("\n● %d action items extracted.\n", len(extraction.ActionItems))
+		}
+		fmt.Printf("● Saved: %s\n", meeting.ID)
+	}
 	return nil
 }
