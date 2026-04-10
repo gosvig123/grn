@@ -7,6 +7,23 @@ type MeetingDetail = Awaited<ReturnType<typeof window.grn.meetings.show>>
 
 type View = 'record' | 'meetings'
 
+function meetingStatusLabel(state: MeetingStatus['state']): string {
+  switch (state) {
+    case 'recording':
+      return 'Recording'
+    case 'processing':
+      return 'Processing'
+    case 'completed':
+      return 'Completed'
+    case 'failed':
+      return 'Failed'
+  }
+}
+
+function artifactLabel(ready: boolean, present: string, missing: string): string {
+  return ready ? present : missing
+}
+
 const permissionErrorHints = [
   'permission denied',
   'microphone access denied',
@@ -55,7 +72,7 @@ export function App() {
     const dispose = window.grn.recording.onStatusChanged(async (state) => {
       if (disposed) return
       setRecording(state)
-      if (state.status === 'idle' || state.status === 'error') {
+      if (state.status === 'processing' || state.status === 'idle' || state.status === 'error') {
         await refreshMeetings()
         if (selectedMeetingIdRef.current) await loadMeeting(selectedMeetingIdRef.current)
       }
@@ -94,6 +111,7 @@ export function App() {
   const canStart = devices.length > 0 && recording.status === 'idle'
   const canStop = recording.status === 'recording' || recording.status === 'stopping' || recording.status === 'processing'
   const transcript = useMemo(() => selectedMeeting?.transcriptText ?? '', [selectedMeeting])
+  const selectedStatus = selectedMeeting?.status
   const bannerError = error ?? recording.error ?? null
   const isPermissionError = isPermissionErrorMessage(bannerError)
 
@@ -219,8 +237,9 @@ export function App() {
                     <div className="meeting-title">{meeting.title}</div>
                     <div className="meeting-meta">{new Date(meeting.startedAt).toLocaleString()}</div>
                     <div className="meeting-flags">
-                      <span>{meeting.hasTranscript ? 'Transcript' : 'No transcript'}</span>
-                      <span>{meeting.hasSummary ? 'AI summary' : 'No summary'}</span>
+                      <span>{meetingStatusLabel(meeting.status.state)}</span>
+                      <span>{artifactLabel(meeting.hasTranscript, 'Transcript', 'No transcript')}</span>
+                      <span>{artifactLabel(meeting.hasSummary, 'AI summary', 'No summary')}</span>
                     </div>
                   </button>
                 ))}
@@ -235,6 +254,13 @@ export function App() {
                     <div>
                       <h1>{selectedMeeting.title}</h1>
                       <p>{new Date(selectedMeeting.startedAt).toLocaleString()}</p>
+                      {selectedStatus ? (
+                        <p>
+                          {meetingStatusLabel(selectedStatus.state)} · updated{' '}
+                          {new Date(selectedStatus.updatedAt).toLocaleString()}
+                        </p>
+                      ) : null}
+                      {selectedStatus?.failureMessage ? <p>{selectedStatus.failureMessage}</p> : null}
                     </div>
                   </div>
                   <div className="detail-grid">

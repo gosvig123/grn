@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { app } from 'electron'
 import { getRecordingState, setRecordingState } from './state'
@@ -8,11 +8,18 @@ export type Device = {
   name: string
 }
 
+export type MeetingStatus = {
+  state: 'recording' | 'processing' | 'completed' | 'failed'
+  updatedAt: string
+  failureMessage?: string
+}
+
 export type MeetingListItem = {
   id: string
   title: string
   startedAt: string
   endedAt?: string
+  status: MeetingStatus
   hasTranscript: boolean
   hasSummary: boolean
 }
@@ -29,6 +36,7 @@ export type MeetingDetail = {
   title: string
   startedAt: string
   endedAt?: string
+  status: MeetingStatus
   transcriptText?: string
   summary?: string
   segments: MeetingSegment[]
@@ -38,7 +46,7 @@ type DevicesResponse = { devices: Device[] }
 type MeetingsResponse = { meetings: MeetingListItem[] }
 type MeetingResponse = { meeting: MeetingDetail }
 
-let recordingChild: ChildProcessWithoutNullStreams | null = null
+let recordingChild: ReturnType<typeof spawn> | null = null
 
 export function resolveGrnBinary(): string {
   const override = process.env.GRN_BINARY_PATH

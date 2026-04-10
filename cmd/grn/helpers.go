@@ -59,9 +59,22 @@ func transcribeAs(ctx context.Context, audioPath, modelPath, speaker string) ([]
 	return segs, nil
 }
 
+func setMeetingStatus(meeting *db.Meeting, status db.MeetingStatus, updatedAt string, err error) {
+	meeting.Status = status
+	meeting.StatusUpdatedAt = updatedAt
+	meeting.FailureMessage = nil
+	if err != nil {
+		message := err.Error()
+		meeting.FailureMessage = &message
+	}
+}
+
 func savePartial(store *db.DB, meeting *db.Meeting, origErr error) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	meeting.EndedAt = &now
+	if meeting.EndedAt == nil {
+		meeting.EndedAt = &now
+	}
+	setMeetingStatus(meeting, db.MeetingStatusFailed, now, origErr)
 	updateErr := store.UpdateMeeting(meeting)
 	if updateErr == nil && meeting.AudioPath != nil {
 		fmt.Printf("  session saved (audio may be incomplete — check %s)\n", *meeting.AudioPath)

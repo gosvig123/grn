@@ -115,6 +115,13 @@ func runListen(deviceIdx int, title, modelPath string, mode capture.CaptureMode)
 		fmt.Printf("● Recorded %s\n", duration.Truncate(time.Second))
 	}
 
+	endedAt := time.Now().UTC().Format(time.RFC3339)
+	meeting.EndedAt = &endedAt
+	setMeetingStatus(meeting, db.MeetingStatusProcessing, endedAt, nil)
+	if err := store.UpdateMeeting(meeting); err != nil {
+		return fmt.Errorf("mark meeting processing: %w", err)
+	}
+
 	postCtx, postCancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer postCancel()
 
@@ -138,10 +145,12 @@ func createSessionDir(title string) (string, error) {
 func startMeeting(store *db.DB, title, sessionDir string) (*db.Meeting, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	meeting := &db.Meeting{
-		Title:     title,
-		StartedAt: now,
-		AudioPath: &sessionDir,
-		Source:    "listen",
+		Title:           title,
+		StartedAt:       now,
+		Status:          db.MeetingStatusRecording,
+		StatusUpdatedAt: now,
+		AudioPath:       &sessionDir,
+		Source:          "listen",
 	}
 	if err := store.CreateMeeting(meeting); err != nil {
 		return nil, fmt.Errorf("create meeting: %w", err)
@@ -233,6 +242,8 @@ func enhanceAndSave(store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, tr
 	extraction, summary, err := pipeline.Run(cmdContext(), transcript, "")
 	if err != nil {
 		meeting.Transcript = &transcript
+		now := time.Now().UTC().Format(time.RFC3339)
+		setMeetingStatus(meeting, db.MeetingStatusFailed, now, err)
 		if updateErr := store.UpdateMeeting(meeting); updateErr != nil {
 			return errors.Join(
 				fmt.Errorf("enhance failed: %w", err),
@@ -245,7 +256,7 @@ func enhanceAndSave(store *db.DB, pipeline *ai.Pipeline, meeting *db.Meeting, tr
 	meeting.Transcript = &transcript
 	meeting.Summary = &summary
 	now := time.Now().UTC().Format(time.RFC3339)
-	meeting.EndedAt = &now
+	setMeetingStatus(meeting, db.MeetingStatusCompleted, now, nil)
 	if err := store.UpdateMeeting(meeting); err != nil {
 		return fmt.Errorf("update meeting: %w", err)
 	}

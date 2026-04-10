@@ -1,6 +1,12 @@
 export {}
 
 declare global {
+  type MeetingStatus = {
+    state: 'recording' | 'processing' | 'completed' | 'failed'
+    updatedAt: string
+    failureMessage?: string
+  }
+
   interface Window {
     grn: {
       system: {
@@ -14,6 +20,7 @@ declare global {
             title: string
             startedAt: string
             endedAt?: string
+            status: MeetingStatus
             hasTranscript: boolean
             hasSummary: boolean
           }>
@@ -23,6 +30,7 @@ declare global {
           title: string
           startedAt: string
           endedAt?: string
+          status: MeetingStatus
           transcriptText?: string
           summary?: string
           segments: Array<{ startSec: number; endSec: number; speaker: string; text: string }>

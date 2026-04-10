@@ -11,11 +11,18 @@ type Device = {
   name: string
 }
 
+type MeetingStatus = {
+  state: 'recording' | 'processing' | 'completed' | 'failed'
+  updatedAt: string
+  failureMessage?: string
+}
+
 type MeetingListItem = {
   id: string
   title: string
   startedAt: string
   endedAt?: string
+  status: MeetingStatus
   hasTranscript: boolean
   hasSummary: boolean
 }
@@ -32,6 +39,7 @@ type MeetingDetail = {
   title: string
   startedAt: string
   endedAt?: string
+  status: MeetingStatus
   transcriptText?: string
   summary?: string
   segments: MeetingSegment[]

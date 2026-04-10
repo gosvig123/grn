@@ -8,44 +8,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type appDevicesResponse struct {
-	Devices []capture.Device `json:"devices"`
-}
-
-type appMeetingsResponse struct {
-	Meetings []appMeetingListItem `json:"meetings"`
-}
-
-type appMeetingListItem struct {
-	ID            string  `json:"id"`
-	Title         string  `json:"title"`
-	StartedAt     string  `json:"startedAt"`
-	EndedAt       *string `json:"endedAt,omitempty"`
-	HasTranscript bool    `json:"hasTranscript"`
-	HasSummary    bool    `json:"hasSummary"`
-}
-
-type appMeetingResponse struct {
-	Meeting appMeetingDetail `json:"meeting"`
-}
-
-type appMeetingDetail struct {
-	ID             string              `json:"id"`
-	Title          string              `json:"title"`
-	StartedAt      string              `json:"startedAt"`
-	EndedAt        *string             `json:"endedAt,omitempty"`
-	TranscriptText string              `json:"transcriptText,omitempty"`
-	Summary        string              `json:"summary,omitempty"`
-	Segments       []appMeetingSegment `json:"segments"`
-}
-
-type appMeetingSegment struct {
-	StartSec float64 `json:"startSec"`
-	EndSec   float64 `json:"endSec"`
-	Speaker  string  `json:"speaker"`
-	Text     string  `json:"text"`
-}
-
 func appCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "app",
@@ -68,7 +30,11 @@ func appDevicesCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return writeJSON(appDevicesResponse{Devices: devices})
+			out := make([]captureDevice, 0, len(devices))
+			for _, device := range devices {
+				out = append(out, captureDevice{Index: device.Index, Name: device.Name})
+			}
+			return writeJSON(appDevicesResponse{Devices: out})
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output JSON")
@@ -138,6 +104,7 @@ func appMeetingsListCmd() *cobra.Command {
 					Title:         meeting.Title,
 					StartedAt:     meeting.StartedAt,
 					EndedAt:       meeting.EndedAt,
+					Status:        appMeetingStatusFor(meeting),
 					HasTranscript: meeting.Transcript != nil,
 					HasSummary:    meeting.Summary != nil,
 				})
@@ -208,6 +175,7 @@ func appMeetingDetailFor(store *db.DB, id string) (appMeetingDetail, error) {
 		Title:          meeting.Title,
 		StartedAt:      meeting.StartedAt,
 		EndedAt:        meeting.EndedAt,
+		Status:         appMeetingStatusFor(*meeting),
 		TranscriptText: transcriptText,
 		Summary:        summary,
 		Segments:       outSegments,

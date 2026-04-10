@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/grn-dev/grn/internal/ai"
 	"github.com/grn-dev/grn/internal/db"
@@ -37,19 +39,35 @@ func runEnhance(store *db.DB, pipeline *ai.Pipeline, id, notes string) error {
 		return fmt.Errorf("no segments found for meeting %s", id)
 	}
 	transcript := formatTranscript(segments)
+	meeting, err := store.GetMeeting(id)
+	if err != nil {
+		return fmt.Errorf("get meeting: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	setMeetingStatus(meeting, db.MeetingStatusProcessing, now, nil)
+	if err := store.UpdateMeeting(meeting); err != nil {
+		return fmt.Errorf("mark meeting processing: %w", err)
+	}
 
 	fmt.Println("Extracting structure...")
 	extraction, summary, err := pipeline.Run(cmdContext(), transcript, notes)
 	if err != nil {
+		now = time.Now().UTC().Format(time.RFC3339)
+		setMeetingStatus(meeting, db.MeetingStatusFailed, now, err)
+		if updateErr := store.UpdateMeeting(meeting); updateErr != nil {
+			return fmt.Errorf("pipeline: %w", errors.Join(err, fmt.Errorf("update meeting: %w", updateErr)))
+		}
 		return fmt.Errorf("pipeline: %w", err)
 	}
 
-	meeting, err := store.GetMeeting(id)
+	meeting, err = store.GetMeeting(id)
 	if err != nil {
 		return fmt.Errorf("get meeting: %w", err)
 	}
 	meeting.Transcript = &transcript
 	meeting.Summary = &summary
+	now = time.Now().UTC().Format(time.RFC3339)
+	setMeetingStatus(meeting, db.MeetingStatusCompleted, now, nil)
 	if err := store.UpdateMeeting(meeting); err != nil {
 		return fmt.Errorf("update meeting: %w", err)
 	}
@@ -93,10 +111,15 @@ func listMeetings(store *db.DB) error {
 	}
 	for _, m := range meetings {
 		status := "○"
-		if m.Summary != nil {
+		switch m.Status {
+		case db.MeetingStatusCompleted:
 			status = "●"
+		case db.MeetingStatusFailed:
+			status = "!"
+		case db.MeetingStatusProcessing:
+			status = "..."
 		}
-		fmt.Printf("  %s %s  %s  %s\n", status, m.ID[:8], m.StartedAt[:10], m.Title)
+		fmt.Printf("  %s %s  %s  %s (%s)\n", status, m.ID[:8], m.StartedAt[:10], m.Title, m.Status)
 	}
 	return nil
 }
@@ -126,6 +149,10 @@ func showMeeting(store *db.DB, id string) error {
 	fmt.Printf("Date: %s\n", meeting.StartedAt)
 	if meeting.EndedAt != nil {
 		fmt.Printf("Ended: %s\n", *meeting.EndedAt)
+	}
+	fmt.Printf("Status: %s\n", meeting.Status)
+	if meeting.FailureMessage != nil {
+		fmt.Printf("Failure: %s\n", *meeting.FailureMessage)
 	}
 
 	if meeting.Transcript != nil {
