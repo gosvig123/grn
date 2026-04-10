@@ -7,6 +7,20 @@ type MeetingDetail = Awaited<ReturnType<typeof window.grn.meetings.show>>
 
 type View = 'record' | 'meetings'
 
+const permissionErrorHints = [
+  'permission denied',
+  'microphone access denied',
+  'screen recording access required',
+  'grant permission:',
+  'privacy & security',
+]
+
+function isPermissionErrorMessage(message: string | null | undefined): boolean {
+  if (!message) return false
+  const normalized = message.toLowerCase()
+  return permissionErrorHints.some((hint) => normalized.includes(hint))
+}
+
 export function App() {
   const [view, setView] = useState<View>('record')
   const [devices, setDevices] = useState<Device[]>([])
@@ -80,6 +94,8 @@ export function App() {
   const canStart = devices.length > 0 && recording.status === 'idle'
   const canStop = recording.status === 'recording' || recording.status === 'stopping' || recording.status === 'processing'
   const transcript = useMemo(() => selectedMeeting?.transcriptText ?? '', [selectedMeeting])
+  const bannerError = error ?? recording.error ?? null
+  const isPermissionError = isPermissionErrorMessage(bannerError)
 
   async function handleStart() {
     try {
@@ -99,6 +115,14 @@ export function App() {
     try {
       setError(null)
       await window.grn.recording.stop()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleOpenPermissionsSettings() {
+    try {
+      await window.grn.system.openPermissionsSettings()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -231,7 +255,27 @@ export function App() {
           </>
         )}
 
-        {error ? <div className="banner error">{error}</div> : null}
+        {bannerError ? (
+          <div className="banner error">
+            <div>{bannerError}</div>
+            {isPermissionError ? (
+              <>
+                <div>
+                  Enable GrnCapture in macOS Privacy &amp; Security, then try again. Screen Recording changes may
+                  require quitting and reopening the app before retrying.
+                </div>
+                <div className="actions-row banner-actions">
+                  <button className="primary" onClick={() => void handleStart()}>
+                    Try again
+                  </button>
+                  <button className="secondary" onClick={() => void handleOpenPermissionsSettings()}>
+                    Open System Settings
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        ) : null}
       </main>
     </div>
   )

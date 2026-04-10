@@ -40,6 +40,7 @@ type MeetingDetail = {
 const api = {
   system: {
     getDevices: (): Promise<Device[]> => ipcRenderer.invoke('system:getDevices'),
+    openPermissionsSettings: (): Promise<void> => ipcRenderer.invoke('system:openPermissionsSettings'),
   },
   meetings: {
     list: (): Promise<MeetingListItem[]> => ipcRenderer.invoke('meetings:list'),

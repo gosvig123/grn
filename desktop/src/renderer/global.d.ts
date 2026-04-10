@@ -5,6 +5,7 @@ declare global {
     grn: {
       system: {
         getDevices(): Promise<Array<{ index: number; name: string }>>
+        openPermissionsSettings(): Promise<void>
       }
       meetings: {
         list(): Promise<
