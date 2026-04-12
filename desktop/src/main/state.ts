@@ -1,16 +1,6 @@
-export type RecordingStatus =
-  | 'idle'
-  | 'recording'
-  | 'stopping'
-  | 'processing'
-  | 'error'
+import type { RecordingState } from '../shared/contracts'
 
-export type RecordingState = {
-  status: RecordingStatus
-  meetingId?: string
-  title?: string
-  error?: string
-}
+export type { RecordingState }
 
 let state: RecordingState = { status: 'idle' }
 const listeners = new Set<(state: RecordingState) => void>()

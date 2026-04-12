@@ -1,62 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-
-type RecordingState = {
-  status: 'idle' | 'recording' | 'stopping' | 'processing' | 'error'
-  meetingId?: string
-  title?: string
-  error?: string
-}
-
-type Device = {
-  index: number
-  name: string
-}
-
-type CaptureStatus = 'recording' | 'captured' | 'failed'
-type ProcessingStatus = 'not_started' | 'processing' | 'completed' | 'failed'
-
-type MeetingStatus = {
-  state: 'recording' | 'captured' | 'processing' | 'completed' | 'failed'
-  updatedAt: string
-  capture: {
-    state: CaptureStatus
-    updatedAt: string
-    failureMessage?: string
-  }
-  processing: {
-    state: ProcessingStatus
-    updatedAt: string
-    failureMessage?: string
-  }
-}
-
-type MeetingListItem = {
-  id: string
-  title: string
-  startedAt: string
-  endedAt?: string
-  status: MeetingStatus
-  hasTranscript: boolean
-  hasSummary: boolean
-}
-
-type MeetingSegment = {
-  startSec: number
-  endSec: number
-  speaker: string
-  text: string
-}
-
-type MeetingDetail = {
-  id: string
-  title: string
-  startedAt: string
-  endedAt?: string
-  status: MeetingStatus
-  transcriptText?: string
-  summary?: string
-  segments: MeetingSegment[]
-}
+import type { Device, LocalAIStatus, MeetingDetail, MeetingListItem, OnboardingStatus, RecordingState } from '../shared/contracts'
 
 const api = {
   system: {
@@ -77,6 +20,20 @@ const api = {
       ipcRenderer.on('recording:status-changed', wrapped)
       return () => ipcRenderer.removeListener('recording:status-changed', wrapped)
     },
+  },
+  onboarding: {
+    getStatus: (): Promise<OnboardingStatus> => ipcRenderer.invoke('onboarding:getStatus'),
+    start: (): Promise<OnboardingStatus> => ipcRenderer.invoke('onboarding:start'),
+    retry: (): Promise<OnboardingStatus> => ipcRenderer.invoke('onboarding:retry'),
+    onStatusChanged: (listener: (state: OnboardingStatus) => void): (() => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, state: OnboardingStatus) => listener(state)
+      ipcRenderer.on('onboarding:status-changed', wrapped)
+      return () => ipcRenderer.removeListener('onboarding:status-changed', wrapped)
+    },
+  },
+  settings: {
+    getLocalAIStatus: (): Promise<LocalAIStatus> => ipcRenderer.invoke('settings:getLocalAIStatus'),
+    repairLocalAI: (): Promise<LocalAIStatus> => ipcRenderer.invoke('settings:repairLocalAI'),
   },
 }
 

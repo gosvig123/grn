@@ -1,0 +1,22 @@
+.setup-error-help {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.setup-error-summary {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.setup-error-instructions {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.45);
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+}
