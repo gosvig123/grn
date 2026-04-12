@@ -8,6 +8,8 @@ extraResources:
     to: bin/grn
   - from: ../build/GrnCapture.app
     to: GrnCapture.app
+  - from: resources/ollama/ollama
+    to: ollama/ollama
 mac:
   category: public.app-category.productivity
   target:

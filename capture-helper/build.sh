@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/../build"
 APP_DIR="${BUILD_DIR}/GrnCapture.app/Contents"
 
+rm -rf "${BUILD_DIR}/GrnCapture.app"
 mkdir -p "${APP_DIR}/MacOS"
 cp "${SCRIPT_DIR}/Info.plist" "${APP_DIR}/Info.plist"
 

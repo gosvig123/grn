@@ -34,3 +34,6 @@ Thumbs.db
 *.swo
 *~
 /grn
+# Desktop Ollama artifacts
+desktop/.cache/ollama/
+desktop/resources/ollama/ollama
