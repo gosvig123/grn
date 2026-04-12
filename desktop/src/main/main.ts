@@ -1,6 +1,8 @@
 import path from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { registerIpc } from './ipc'
+import { bootstrapOnboarding } from './onboarding'
+import { stopManagedOllama } from './ollama'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -23,7 +25,7 @@ function createWindow(): void {
   const devServerUrl = process.env.VITE_DEV_SERVER_URL
   if (devServerUrl) {
     void mainWindow.loadURL(devServerUrl)
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
+    if (process.env.OPEN_DEVTOOLS === '1') mainWindow.webContents.openDevTools({ mode: 'detach' })
     return
   }
 
@@ -32,10 +34,15 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   createWindow()
+  void bootstrapOnboarding()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('before-quit', () => {
+  stopManagedOllama()
 })
 
 app.on('window-all-closed', () => {
