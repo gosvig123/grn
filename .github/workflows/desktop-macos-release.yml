@@ -1,0 +1,87 @@
+name: Desktop macOS Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: macos-14
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      CSC_NAME: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      GRN_ENABLE_NOTARIZATION: '1'
+      GRN_REQUIRE_GATEKEEPER: '1'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Validate release secrets
+        run: |
+          test -n "$APPLE_CERTIFICATE_P12_BASE64"
+          test -n "$APPLE_CERTIFICATE_PASSWORD"
+          test -n "$APPLE_SIGNING_IDENTITY"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+          test -n "$APPLE_TEAM_ID"
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Write signing certificate
+        run: |
+          CERT_PATH="$RUNNER_TEMP/grn-macos-signing.p12"
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          cert = os.environ['APPLE_CERTIFICATE_P12_BASE64']
+          Path(os.environ['RUNNER_TEMP'], 'grn-macos-signing.p12').write_bytes(base64.b64decode(cert))
+          PY
+          echo "CSC_LINK=$CERT_PATH" >> "$GITHUB_ENV"
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Install desktop dependencies
+        run: npm ci
+        working-directory: desktop
+
+      - name: Build release artifacts
+        run: npm run dist
+        working-directory: desktop
+
+      - name: Verify notarized app bundle
+        run: npm run verify:mac-release
+        working-directory: desktop
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: grn-desktop-macos
+          path: |
+            desktop/dist/*.dmg
+            desktop/dist/mac*/**

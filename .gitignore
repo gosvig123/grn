@@ -7,7 +7,8 @@ node_modules/
 *.dll
 *.so
 *.dylib
-/docs
+/docs/*
+!/docs/desktop-macos-release.md
 # Go
 vendor/
 
@@ -40,3 +41,5 @@ desktop/resources/ollama/ollama
 desktop/.cache/whisper/
 desktop/resources/whisper/whisper-cli
 desktop/src/**/*.js
+!desktop/build/
+!desktop/build/*.plist

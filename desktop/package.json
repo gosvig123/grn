@@ -13,8 +13,9 @@
     "native:prepare": "node ./scripts/ensure-native-artifacts.mjs",
     "prepare:ollama": "node ./scripts/prepare-ollama-bundle.mjs",
     "prepare:whisper": "node ./scripts/prepare-whisper-bundle.mjs",
-    "dist": "npm run prepare:ollama && npm run prepare:whisper && npm run build && electron-builder --config electron-builder.yml",
-    "dist:dir": "npm run prepare:ollama && npm run prepare:whisper && npm run build && electron-builder --config electron-builder.yml --mac dir"
+    "dist": "npm run prepare:ollama && npm run prepare:whisper && npm run build && electron-builder --config electron-builder.config.cjs",
+    "dist:dir": "npm run prepare:ollama && npm run prepare:whisper && npm run build && electron-builder --config electron-builder.config.cjs --mac dir",
+    "verify:mac-release": "node ./scripts/verify-mac-release.cjs"
   },
   "dependencies": {
     "react": "^19.1.0",
