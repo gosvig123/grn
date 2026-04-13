@@ -41,9 +41,9 @@ type OnboardingPhaseCopy = {
 
 const PHASE_COPY: Record<OnboardingStatus['phase'], OnboardingPhaseCopy> = {
   checking: { headline: 'Checking your local AI setup.', detail: 'Looking for the bundled Ollama runtime and any model files already on this Mac.', progressDetail: 'Confirming what is already installed before setup continues.', actionLabel: 'Checking setup...' },
-  needs_setup: { headline: 'Install once. Keep recordings local.', detail: 'Start the bundled Ollama runtime and download the recommended model for this Mac.', progressDetail: 'Setup will download the model, then save the local runtime settings.', actionLabel: 'Set up local AI' },
+  needs_setup: { headline: 'Install once. Keep recordings local.', detail: 'Start the bundled runtimes and download the recommended local models for this Mac.', progressDetail: 'Setup downloads the managed models, then saves the local runtime settings.', actionLabel: 'Set up local AI' },
   starting_ollama: { headline: 'Starting the bundled Ollama runtime.', detail: 'Granola is launching the managed local service used for recordings on this Mac.', progressDetail: 'This step usually finishes quickly once the local runtime is ready.', actionLabel: 'Starting Ollama...' },
-  pulling_model: { headline: 'Downloading the recommended local model.', detail: 'First-time setup can take several minutes depending on your connection and disk speed.', progressDetail: 'Keep Granola open while the download continues in the background.', actionLabel: 'Downloading model...', actionHint: 'Large model downloads can look quiet between updates. Granola keeps working until setup finishes or an error appears.' },
+  pulling_model: { headline: 'Downloading the recommended local models.', detail: 'First-time setup can take several minutes depending on your connection and disk speed.', progressDetail: 'Keep Granola open while the downloads continue in the background.', actionLabel: 'Downloading models...', actionHint: 'Large model downloads can look quiet between updates. Granola keeps working until setup finishes or an error appears.' },
   saving_config: { headline: 'Finishing local AI setup.', detail: 'The download is done. Granola is saving the managed runtime settings for future recordings.', progressDetail: 'Almost done. This step stores the bundled runtime configuration.', actionLabel: 'Finishing setup...' },
   ready: { headline: 'Local AI is ready.', detail: 'The bundled Ollama runtime is configured and recordings stay on this Mac.', progressDetail: 'Setup complete. You can start using local AI now.', actionLabel: 'Ready' },
   error: { headline: 'Local AI setup needs attention.', detail: 'Setup stopped before the bundled Ollama flow finished. Review the error and try again.', progressDetail: 'Setup paused because an error interrupted the managed runtime flow.', actionLabel: 'Retry setup' },
@@ -115,7 +115,7 @@ function SetupProgressCard({ status, copy }: SetupProgressCardProps) {
 function SetupPlanRail({ status }: Pick<OnboardingViewProps, 'status'>) {
   return (
     <aside className="setup-panel setup-rail settings-stack">
-      <div><h2>Plan</h2><p>One managed model. No picker in this flow.</p></div>
+      <div><h2>Plan</h2><p>Managed runtime plus speech model. No picker in this flow.</p></div>
       <div className="setup-metrics">
         {planMetrics(status).map((metric) => (
           <div key={metric.label} className="metric-card"><div className="label">{metric.label}</div><div className="value">{metric.value}</div></div>
@@ -135,7 +135,7 @@ export function OnboardingView({ status, busy, onStart, onRetry }: OnboardingVie
   const hint = !isReady && !isError && status.phase !== 'needs_setup' ? copy.actionHint : undefined
   return (
     <section className="panel panel-large setup-shell">
-      <div className="panel-header"><div><h1>Local AI setup</h1><p>Bundled Ollama on this Mac.</p></div><div className={`status-pill ${onboardingStatusTone(status.phase)}`}>{onboardingPhaseLabel(status.phase)}</div></div>
+      <div className="panel-header"><div><h1>Local AI setup</h1><p>Bundled Ollama and Whisper on this Mac.</p></div><div className={`status-pill ${onboardingStatusTone(status.phase)}`}>{onboardingPhaseLabel(status.phase)}</div></div>
       <div className="setup-grid">
         <div className="setup-panel setup-primary">
           <div className="setup-callout"><strong>Recommended</strong><h2>{copy.headline}</h2><p>{copy.detail}</p></div>

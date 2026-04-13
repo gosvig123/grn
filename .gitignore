@@ -37,3 +37,6 @@ Thumbs.db
 # Desktop Ollama artifacts
 desktop/.cache/ollama/
 desktop/resources/ollama/ollama
+desktop/.cache/whisper/
+desktop/resources/whisper/whisper-cli
+desktop/src/**/*.js

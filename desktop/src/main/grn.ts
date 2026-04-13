@@ -3,6 +3,7 @@ import path from 'node:path'
 import { app } from 'electron'
 import type { Device, LocalAIConfig, MeetingDetail, MeetingListItem, MeetingStatus } from '../shared/contracts'
 import { getRecordingState, setRecordingState, type RecordingState } from './state'
+import { getManagedWhisperPaths } from './whisper'
 
 export type CaptureStatus = 'recording' | 'captured' | 'failed'
 export type ProcessingStatus = 'not_started' | 'processing' | 'completed' | 'failed'
@@ -70,8 +71,8 @@ export async function saveManagedLocalAIConfig(input: {
 export function startRecording(input: { title: string; device: number; mode: string; modelPath?: string }): void {
   if (recordingChild) throw new Error('A recording is already running')
 
-  const args = ['app', 'record', 'start', '--title', input.title, '--device', String(input.device), '--mode', input.mode]
-  if (input.modelPath) args.push('--model', input.modelPath)
+  const whisper = getManagedWhisperPaths()
+  const args = ['app', 'record', 'start', '--title', input.title, '--device', String(input.device), '--mode', input.mode, '--model', whisper.modelPath]
 
   let stderr = ''
   let stdoutBuffer = ''
@@ -79,7 +80,7 @@ export function startRecording(input: { title: string; device: number; mode: str
   let sawProtocolEvent = false
   let protocolError: string | null = null
   const child = spawn(resolveGrnBinary(), args, {
-    env: childEnv(),
+    env: childEnv({ GRN_WHISPER_BIN: whisper.binaryPath }),
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   recordingChild = child
@@ -182,7 +183,7 @@ function runCommand(args: string[]): Promise<string> {
   })
 }
 
-export function childEnv(): NodeJS.ProcessEnv {
+export function childEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const pathParts = [
     process.env.PATH ?? '',
     '/opt/homebrew/bin',
@@ -196,6 +197,7 @@ export function childEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
     PATH: Array.from(new Set(pathParts.filter(Boolean))).join(':'),
+    ...overrides,
   }
 }
 

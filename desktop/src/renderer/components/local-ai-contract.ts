@@ -35,7 +35,7 @@ const ERROR_VIEWS: Record<NonNullable<OnboardingStatus['errorKind']>, Omit<Onboa
   disk_space: { title: 'Not enough disk space for the model.', detail: 'Free some space on this Mac, then retry Local AI setup.', compact: 'Need more disk space.' },
   permission: { title: 'Granola could not update local AI files.', detail: 'Check file permissions on this Mac, then retry setup.', compact: 'File permission issue.' },
   ownership_mismatch: { title: "Another Ollama process is using Granola's local port.", detail: 'Granola needs 127.0.0.1:11435 for its managed runtime. Stop the other Ollama process manually, then retry setup.', compact: 'Another Ollama is using 11435.' },
-  runtime: { title: 'Bundled Ollama needs attention.', compact: 'Bundled Ollama needs attention.' },
+  runtime: { title: 'Bundled runtime needs attention.', compact: 'Bundled runtime needs attention.' },
 }
 
 const GENERIC_PHASE_MESSAGES: Record<OnboardingStatus['phase'], string[]> = {
@@ -138,7 +138,7 @@ function legacyErrorView(error: string | undefined): OnboardingErrorView | null 
   if (matchesText(text, ['no space', 'disk full', 'enospc', 'not enough space'])) return { title: 'Not enough disk space for the model.', detail: 'Free some space on this Mac, then retry Local AI setup.', compact: 'Need more disk space.' }
   if (matchesText(text, ['permission denied', 'operation not permitted', 'access denied', 'eacces'])) return { title: 'Granola could not update local AI files.', detail: 'Check file permissions on this Mac, then retry setup.', compact: 'File permission issue.' }
   if (matchesText(text, ['another ollama process', 'app-owned runtime', '127.0.0.1:11435', 'address already in use'])) return { title: "Another Ollama process is using Granola's local port.", detail: 'Granola needs 127.0.0.1:11435 for its managed runtime. Stop the other Ollama process manually, then retry setup.', compact: 'Another Ollama is using 11435.', ownershipHelp: buildOwnershipHelp(undefined) }
-  return matchesText(text, ['spawn', 'listen']) ? { title: 'Bundled Ollama could not finish setup.', detail: truncateText(text, 120), compact: 'Bundled Ollama needs attention.' } : { title: truncateText(text, 120), compact: truncateText(text, 72) }
+  return matchesText(text, ['spawn', 'listen', 'whisper']) ? { title: 'Bundled runtime could not finish setup.', detail: truncateText(text, 120), compact: 'Bundled runtime needs attention.' } : { title: truncateText(text, 120), compact: truncateText(text, 72) }
 }
 
 function splitStatusText(text: string): [string, string | undefined] {

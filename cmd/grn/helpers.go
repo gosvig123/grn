@@ -48,7 +48,7 @@ func parseTime(s string) (time.Time, error) {
 
 func transcribeAs(ctx context.Context, audioPath, modelPath, speaker string) ([]transcribe.Segment, error) {
 	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("whisper model not found at %s (download with: grn setup)", modelPath)
+		return nil, whisperModelNotFoundError(modelPath)
 	}
 	segs, err := transcribe.TranscribeFile(ctx, audioPath, modelPath)
 	if err != nil {
@@ -58,6 +58,14 @@ func transcribeAs(ctx context.Context, audioPath, modelPath, speaker string) ([]
 		segs[i].Speaker = speaker
 	}
 	return segs, nil
+}
+
+func whisperModelNotFoundError(modelPath string) error {
+	defaultPath, err := defaultModelPath()
+	if err == nil && modelPath == defaultPath {
+		return fmt.Errorf("whisper model not found at %s (run: grn setup or pass --model)", modelPath)
+	}
+	return fmt.Errorf("whisper model not found at %s", modelPath)
 }
 
 func setMeetingCaptureStatus(meeting *db.Meeting, status db.CaptureStatus, updatedAt string, err error) {
