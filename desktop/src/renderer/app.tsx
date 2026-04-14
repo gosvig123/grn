@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AppSidebar } from './components/app-sidebar'
 import { getLocalAIContract, toStatusError, type LocalAIStatus, type OnboardingStatus } from './components/local-ai-contract'
-import { isPermissionErrorMessage } from './components/meeting-status'
+import { isPermissionErrorMessage, permissionTarget } from './components/meeting-status'
 import { PermissionBanner } from './components/permission-banner'
 import { MeetingsView } from './routes/meetings-view'
 import { OnboardingView } from './routes/onboarding-view'
@@ -31,6 +31,7 @@ export function App() {
   const [settingsStatus, setSettingsStatus] = useState<LocalAIStatus | null>(null)
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsBusy, setSettingsBusy] = useState(false)
+
   function applySelectedMeetingId(id: string | null) {
     selectedMeetingIdRef.current = id
     setSelectedMeetingId(id)
@@ -129,9 +130,24 @@ export function App() {
   const bannerError = error ?? recording.error ?? null
   const isPermissionError = isPermissionErrorMessage(bannerError)
 
+  function capturePermissionError(permissions: Awaited<ReturnType<typeof window.grn.system.requestCapturePermissions>>): string | null {
+    const microphoneDenied = permissions.microphone !== 'granted'
+    const screenDenied = permissions.screen !== 'granted'
+    if (microphoneDenied && screenDenied) return 'Microphone and Screen Recording access denied. Enable GrnCapture in System Settings to record.'
+    if (microphoneDenied) return 'Microphone access denied. Enable GrnCapture in System Settings to record.'
+    if (screenDenied) return 'Screen Recording access required. Enable GrnCapture in System Settings to capture system audio.'
+    return null
+  }
+
   async function handleStart() {
     try {
       setError(null)
+      const permissions = await window.grn.system.requestCapturePermissions()
+      const permissionError = capturePermissionError(permissions)
+      if (permissionError) {
+        setError(permissionError)
+        return
+      }
       await window.grn.recording.start({ title: title.trim() || new Date().toLocaleString(), device, mode: 'both' })
       setView('record')
     } catch (err) {
@@ -148,7 +164,13 @@ export function App() {
   }
   async function handleOpenPermissionsSettings() {
     try {
-      await window.grn.system.openPermissionsSettings()
+      const permissions = await window.grn.system.requestCapturePermissions()
+      const target = permissions.microphone !== 'granted'
+        ? 'microphone'
+        : permissions.screen !== 'granted'
+          ? 'screen-recording'
+          : permissionTarget(bannerError)
+      await window.grn.system.openPermissionsSettings(target)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }

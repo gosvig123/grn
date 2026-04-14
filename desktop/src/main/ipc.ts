@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain, shell } from 'electron'
-import { getDevices, listMeetings, showMeeting, startRecording, stopRecording } from './grn'
+import { getDevices, listMeetings, requestCapturePermissions, showMeeting, startRecording, stopRecording } from './grn'
 import { getLocalAIStatus, getOnboardingStatus, onOnboardingStatusChange, repairLocalAI, retryOnboarding, startOnboarding } from './onboarding'
 import { getRecordingState, onRecordingStateChange } from './state'
 
@@ -8,8 +8,14 @@ let registered = false
 export function registerIpc(mainWindow: BrowserWindow): void {
   if (!registered) {
     ipcMain.handle('system:getDevices', () => getDevices())
-    ipcMain.handle('system:openPermissionsSettings', async () => {
-      await shell.openExternal('x-apple.systempreferences:com.apple.preference.security', { activate: true })
+    ipcMain.handle('system:requestCapturePermissions', () => requestCapturePermissions())
+    ipcMain.handle('system:openPermissionsSettings', async (_event, target?: 'microphone' | 'screen-recording') => {
+      const urls: Record<string, string> = {
+        'microphone': 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+        'screen-recording': 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+      }
+      const url = (target && urls[target]) ?? 'x-apple.systempreferences:com.apple.preference.security'
+      await shell.openExternal(url, { activate: true })
     })
     ipcMain.handle('meetings:list', () => listMeetings())
     ipcMain.handle('meetings:show', (_event, id: string) => showMeeting(id))

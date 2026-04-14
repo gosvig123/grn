@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ type Recorder struct {
 	deviceIdx int
 	cmd       *exec.Cmd
 	waitCh    chan error
+	stderr    bytes.Buffer
 }
 
 func NewRecorder(mode CaptureMode, outputDir string, deviceIdx int) *Recorder {
@@ -46,7 +48,8 @@ func (r *Recorder) Start(ctx context.Context) error {
 	}
 	r.cmd = exec.Command(bin, args...)
 	r.cmd.Stdout = os.Stdout
-	r.cmd.Stderr = os.Stderr
+	r.stderr.Reset()
+	r.cmd.Stderr = &r.stderr
 	r.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := r.cmd.Start(); err != nil {
 		return fmt.Errorf("start capture: %w", err)
@@ -58,6 +61,9 @@ func (r *Recorder) Start(ctx context.Context) error {
 	select {
 	case err := <-errCh:
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 126 {
+			if msg := strings.TrimSpace(r.stderr.String()); msg != "" {
+				return fmt.Errorf("%s", msg)
+			}
 			return fmt.Errorf("permission denied — check System Settings → Privacy & Security")
 		}
 		return fmt.Errorf("capture process failed to start: %v", err)
@@ -145,6 +151,7 @@ func bundleCaptureCandidates() []string {
 	}
 	exeDir := filepath.Dir(exePath)
 	return []string{
+		filepath.Clean(filepath.Join(exeDir, "GrnCapture.app", "Contents", "MacOS", "grn-capture")),
 		filepath.Clean(filepath.Join(exeDir, "..", "GrnCapture.app", "Contents", "MacOS", "grn-capture")),
 		filepath.Clean(filepath.Join(exeDir, "..", "Resources", "GrnCapture.app", "Contents", "MacOS", "grn-capture")),
 	}

@@ -14,7 +14,7 @@ export function PermissionBanner({ error, isPermissionError, onRetry, onOpenSett
       {isPermissionError ? (
         <>
           <div>
-            Enable GrnCapture in macOS Privacy &amp; Security, then try again. Screen Recording changes may require quitting and reopening the app before retrying.
+            Enable GrnCapture in macOS Privacy &amp; Security, then try again. If GrnCapture is missing in System Settings, click Open System Settings once to register it first. Screen Recording changes may require quitting and reopening the app before retrying.
           </div>
           <div className="actions-row banner-actions">
             <button className="primary" onClick={onRetry}>

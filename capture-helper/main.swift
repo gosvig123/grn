@@ -34,6 +34,13 @@ func parseArgs() -> Config {
             i += 1; deviceIndex = Int(args[i])
         case "--list-devices":
             listDevices(); exit(0)
+        case "--request-permissions":
+            var outputPath: String? = nil
+            if i + 1 < args.count && args[i + 1] == "--output" {
+                i += 2
+                if i < args.count { outputPath = args[i] }
+            }
+            requestPermissionsAndExit(outputPath: outputPath)
         case "--help":
             printUsage(); exit(0)
         default:
@@ -385,6 +392,46 @@ class SystemAudioRecorder: NSObject, SCStreamOutput {
 
 func stderrPrint(_ message: String) {
     FileHandle.standardError.write((message + "\n").data(using: .utf8)!)
+}
+
+func requestPermissionsAndExit(outputPath: String? = nil) {
+    // Request mic — shows native dialog if not yet determined
+    let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+    if micStatus == .notDetermined {
+        let sema = DispatchSemaphore(value: 0)
+        AVCaptureDevice.requestAccess(for: .audio) { _ in sema.signal() }
+        sema.wait()
+    }
+    let micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+
+    // Request screen recording — shows native dialog if not yet determined
+    var screenGranted = false
+    if #available(macOS 15.0, *) {
+        if !CGPreflightScreenCaptureAccess() {
+            _ = CGRequestScreenCaptureAccess()
+        }
+        screenGranted = CGPreflightScreenCaptureAccess()
+    } else {
+        let sema = DispatchSemaphore(value: 0)
+        Task {
+            do {
+                _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+                screenGranted = true
+            } catch {}
+            sema.signal()
+        }
+        sema.wait()
+    }
+
+    let micStr = micGranted ? "granted" : "denied"
+    let screenStr = screenGranted ? "granted" : "denied"
+    let json = "{\"microphone\":\"\(micStr)\",\"screen\":\"\(screenStr)\"}"
+    if let path = outputPath {
+        try? json.write(toFile: path, atomically: true, encoding: .utf8)
+    } else {
+        print(json)
+    }
+    exit(micGranted && screenGranted ? 0 : 126)
 }
 
 func checkMicPermission() {

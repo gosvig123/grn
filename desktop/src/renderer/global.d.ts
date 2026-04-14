@@ -9,7 +9,8 @@ declare global {
     grn: {
       system: {
         getDevices(): Promise<Device[]>
-        openPermissionsSettings(): Promise<void>
+        requestCapturePermissions(): Promise<{ microphone: string; screen: string }>
+        openPermissionsSettings(target?: 'microphone' | 'screen-recording'): Promise<void>
       }
       meetings: {
         list(): Promise<MeetingListItem[]>

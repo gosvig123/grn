@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { app } from 'electron'
 import type { Device, LocalAIConfig, MeetingDetail, MeetingListItem, MeetingStatus } from '../shared/contracts'
@@ -21,6 +23,34 @@ type RecordingProtocolEvent = {
 }
 
 let recordingChild: ReturnType<typeof spawn> | null = null
+
+export function resolveCaptureBinary(): string {
+  const override = process.env.GRN_CAPTURE_HELPER_PATH
+  if (override) return override
+  if (app.isPackaged) return path.join(process.resourcesPath, 'GrnCapture.app', 'Contents', 'MacOS', 'grn-capture')
+  return path.resolve(__dirname, '../../..', 'build', 'GrnCapture.app', 'Contents', 'MacOS', 'grn-capture')
+}
+
+export function requestCapturePermissions(): Promise<{ microphone: string; screen: string }> {
+  return new Promise((resolve) => {
+    const bin = resolveCaptureBinary()
+    const tmpFile = path.join(os.tmpdir(), `grn-perms-${Date.now()}.json`)
+    const child = spawn(bin, ['--request-permissions', '--output', tmpFile], {
+      env: childEnv({ GRN_CAPTURE_HELPER_PATH: bin }),
+      stdio: ['ignore', 'ignore', 'ignore'],
+    })
+    child.on('close', () => {
+      try {
+        resolve(JSON.parse(fs.readFileSync(tmpFile, 'utf8')))
+      } catch {
+        resolve({ microphone: 'unknown', screen: 'unknown' })
+      } finally {
+        try { fs.unlinkSync(tmpFile) } catch {}
+      }
+    })
+    child.on('error', () => resolve({ microphone: 'unknown', screen: 'unknown' }))
+  })
+}
 
 export function resolveGrnBinary(): string {
   const override = process.env.GRN_BINARY_PATH
@@ -80,7 +110,10 @@ export function startRecording(input: { title: string; device: number; mode: str
   let sawProtocolEvent = false
   let protocolError: string | null = null
   const child = spawn(resolveGrnBinary(), args, {
-    env: childEnv({ GRN_WHISPER_BIN: whisper.binaryPath }),
+    env: childEnv({
+      GRN_WHISPER_BIN: whisper.binaryPath,
+      GRN_CAPTURE_HELPER_PATH: resolveCaptureBinary(),
+    }),
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   recordingChild = child
@@ -157,7 +190,7 @@ export async function runJSON<T>(args: string[]): Promise<T> {
 function runCommand(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(resolveGrnBinary(), args, {
-      env: childEnv(),
+      env: childEnv({ GRN_CAPTURE_HELPER_PATH: resolveCaptureBinary() }),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 

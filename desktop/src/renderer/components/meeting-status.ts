@@ -43,3 +43,11 @@ export function isPermissionErrorMessage(message: string | null | undefined): bo
   const normalized = message.toLowerCase()
   return permissionErrorHints.some((hint) => normalized.includes(hint))
 }
+
+export function permissionTarget(message: string | null | undefined): 'microphone' | 'screen-recording' | undefined {
+  if (!message) return undefined
+  const normalized = message.toLowerCase()
+  if (normalized.includes('microphone')) return 'microphone'
+  if (normalized.includes('screen recording')) return 'screen-recording'
+  return undefined
+}

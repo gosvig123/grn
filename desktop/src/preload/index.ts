@@ -4,7 +4,8 @@ import type { Device, LocalAIStatus, MeetingDetail, MeetingListItem, OnboardingS
 const api = {
   system: {
     getDevices: (): Promise<Device[]> => ipcRenderer.invoke('system:getDevices'),
-    openPermissionsSettings: (): Promise<void> => ipcRenderer.invoke('system:openPermissionsSettings'),
+    requestCapturePermissions: (): Promise<{ microphone: string; screen: string }> => ipcRenderer.invoke('system:requestCapturePermissions'),
+    openPermissionsSettings: (target?: 'microphone' | 'screen-recording'): Promise<void> => ipcRenderer.invoke('system:openPermissionsSettings', target),
   },
   meetings: {
     list: (): Promise<MeetingListItem[]> => ipcRenderer.invoke('meetings:list'),
