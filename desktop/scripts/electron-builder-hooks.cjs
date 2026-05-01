@@ -15,6 +15,7 @@ async function afterSign(context) {
   if (context.electronPlatformName !== 'darwin') return
   const appPath = await resolveAppPath(context.appOutDir, context.packager.appInfo.productFilename)
   await runScript('./notarize-mac-build.cjs', appPath)
+  await runScript('./verify-mac-release.cjs', appPath)
 }
 
 async function runScript(scriptPath, appPath) {

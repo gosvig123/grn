@@ -1,5 +1,8 @@
 const hooks = require('./scripts/electron-builder-hooks.cjs')
 
+const MACOS_MINIMUM_SYSTEM_VERSION = '14.0'
+const MAC_SIGNING_IDENTITY = process.env.APPLE_SIGNING_IDENTITY || process.env.CSC_NAME || '-'
+
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   appId: 'dev.gappd.desktop',
@@ -19,6 +22,8 @@ module.exports = {
   mac: {
     category: 'public.app-category.productivity',
     target: ['dmg'],
+    minimumSystemVersion: MACOS_MINIMUM_SYSTEM_VERSION,
+    identity: MAC_SIGNING_IDENTITY,
     hardenedRuntime: true,
     gatekeeperAssess: false,
     entitlements: 'build/entitlements.mac.plist',

@@ -16,6 +16,8 @@
     <string>APPL</string>
     <key>LSBackgroundOnly</key>
     <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSAudioCaptureUsageDescription</key>

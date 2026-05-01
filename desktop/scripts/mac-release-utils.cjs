@@ -3,6 +3,13 @@ const { access, mkdtemp, readdir, rm, stat } = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
 
+const DEFAULT_MACOS_MIN_VERSION = '14.0'
+const MAC_BUILD_NATIVE = 'native'
+const MAC_BUILD_ARM64 = 'arm64'
+const MAC_BUILD_X64 = 'x64'
+const MAC_BUILD_UNIVERSAL = 'universal'
+const MAC_ARCH_ARM64 = 'arm64'
+const MAC_ARCH_X64 = 'x86_64'
 const desktopRoot = path.resolve(__dirname, '..')
 const distRoot = path.join(desktopRoot, 'release')
 const entitlementsPath = path.join(desktopRoot, 'build', 'entitlements.mac.plist')
@@ -25,12 +32,17 @@ async function resolveAppPath(appOutDir, productName) {
 }
 
 async function defaultAppPath(productName = 'Gappd') {
-  const candidateDirs = ['mac', 'mac-arm64', 'mac-universal', 'mac-x64']
+  const candidateDirs = ['mac-universal', 'mac-arm64', 'mac-x64', 'mac']
+  const candidates = []
   for (const dirName of candidateDirs) {
     const appPath = path.join(distRoot, dirName, `${productName}.app`)
-    if (await pathExists(appPath)) return appPath
+    if (!(await pathExists(appPath))) continue
+    const appStat = await stat(appPath)
+    candidates.push({ appPath, modifiedAt: appStat.mtimeMs })
   }
-  throw new Error(`No packaged app found in ${distRoot}`)
+  if (candidates.length === 0) throw new Error(`No packaged app found in ${distRoot}`)
+  candidates.sort((left, right) => right.modifiedAt - left.modifiedAt)
+  return candidates[0].appPath
 }
 
 function nestedCodeTargets(appPath) {
@@ -145,6 +157,68 @@ function run(command, args, options = {}) {
   throw new Error(`${command} ${args.join(' ')} failed.\n${commandOutput(result)}`.trim())
 }
 
+function readArchitectures(targetPath) {
+  const result = run('lipo', ['-archs', targetPath])
+  return result.stdout
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+}
+
+function readMinimumOsVersions(targetPath) {
+  const result = run('xcrun', ['vtool', '-show-build', targetPath])
+  const matches = [...result.stdout.matchAll(/minos\s+([0-9]+(?:\.[0-9]+)*)/g)].map((match) => match[1])
+  if (matches.length > 0) return matches
+  throw new Error(`No LC_BUILD_VERSION minos value found for ${targetPath}`)
+}
+
+function readAppMinimumSystemVersion(appPath) {
+  const plistPath = path.join(appPath, 'Contents', 'Info.plist')
+  const result = run('plutil', ['-extract', 'LSMinimumSystemVersion', 'raw', '-o', '-', plistPath])
+  return result.stdout.trim()
+}
+
+function expectedArchitecturesForBuildProfile(buildProfile) {
+  switch (buildProfile) {
+    case MAC_BUILD_UNIVERSAL:
+      return [MAC_ARCH_ARM64, MAC_ARCH_X64]
+    case MAC_BUILD_ARM64:
+      return [MAC_ARCH_ARM64]
+    case MAC_BUILD_X64:
+      return [MAC_ARCH_X64]
+    case MAC_BUILD_NATIVE:
+      return [process.arch === 'x64' ? MAC_ARCH_X64 : MAC_ARCH_ARM64]
+    default:
+      throw new Error(`Unsupported GAPPD_MAC_BUILD value: ${buildProfile}`)
+  }
+}
+
+function expectedArchitecturesForAppPath(appPath) {
+  const appOutDir = path.basename(path.dirname(appPath))
+  if (appOutDir === 'mac-universal') return expectedArchitecturesForBuildProfile(MAC_BUILD_UNIVERSAL)
+  if (appOutDir === 'mac-x64') return expectedArchitecturesForBuildProfile(MAC_BUILD_X64)
+  if (appOutDir === 'mac-arm64') return expectedArchitecturesForBuildProfile(MAC_BUILD_ARM64)
+  if (process.env.GAPPD_MAC_BUILD) return expectedArchitecturesForBuildProfile(process.env.GAPPD_MAC_BUILD)
+
+  const appBinaryPath = path.join(appPath, 'Contents', 'MacOS', path.basename(appPath, '.app'))
+  return readArchitectures(appBinaryPath)
+}
+
+function compareVersions(left, right) {
+  const leftParts = left.split('.').map(Number)
+  const rightParts = right.split('.').map(Number)
+  const maxLength = Math.max(leftParts.length, rightParts.length)
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftPart = leftParts[index] || 0
+    const rightPart = rightParts[index] || 0
+    if (leftPart > rightPart) return 1
+    if (leftPart < rightPart) return -1
+  }
+
+  return 0
+}
+
 function commandOutput(result) {
   if (result.error) return result.error.message
   if (result.stderr && result.stderr.trim()) return result.stderr.trim()
@@ -153,15 +227,22 @@ function commandOutput(result) {
 }
 
 module.exports = {
+  DEFAULT_MACOS_MIN_VERSION,
   assessGatekeeper,
   assertNotarizationCredentials,
   commandOutput,
+  compareVersions,
   defaultAppPath,
   desktopRoot,
   entitlementsPath,
+  expectedArchitecturesForAppPath,
+  expectedArchitecturesForBuildProfile,
   inheritEntitlementsPath,
   isReleaseSigning,
   nestedCodeTargets,
+  readAppMinimumSystemVersion,
+  readArchitectures,
+  readMinimumOsVersions,
   removeTempDir,
   resolveAppPath,
   run,

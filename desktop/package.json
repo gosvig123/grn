@@ -15,7 +15,13 @@
     "prepare:whisper": "node ./scripts/prepare-whisper-bundle.mjs",
     "dist": "npm run prepare:ollama && npm run prepare:whisper && npm run build && electron-builder --config electron-builder.config.cjs",
     "dist:dir": "npm run prepare:ollama && npm run prepare:whisper && npm run build && electron-builder --config electron-builder.config.cjs --mac dir",
-    "install:mac": "rm -rf /Applications/Gappd.app && ditto release/mac-arm64/Gappd.app /Applications/Gappd.app && echo 'Installed to /Applications/Gappd.app'",
+    "dist:mac:arm64": "GAPPD_MAC_BUILD=arm64 npm run prepare:ollama && GAPPD_MAC_BUILD=arm64 npm run prepare:whisper && GAPPD_MAC_BUILD=arm64 npm run build && electron-builder --config electron-builder.config.cjs --mac --arm64",
+    "dist:dir:mac:arm64": "GAPPD_MAC_BUILD=arm64 npm run prepare:ollama && GAPPD_MAC_BUILD=arm64 npm run prepare:whisper && GAPPD_MAC_BUILD=arm64 npm run build && electron-builder --config electron-builder.config.cjs --mac dir --arm64",
+    "dist:mac:x64": "GAPPD_MAC_BUILD=x64 npm run prepare:ollama && GAPPD_MAC_BUILD=x64 npm run prepare:whisper && GAPPD_MAC_BUILD=x64 npm run build && electron-builder --config electron-builder.config.cjs --mac --x64",
+    "dist:dir:mac:x64": "GAPPD_MAC_BUILD=x64 npm run prepare:ollama && GAPPD_MAC_BUILD=x64 npm run prepare:whisper && GAPPD_MAC_BUILD=x64 npm run build && electron-builder --config electron-builder.config.cjs --mac dir --x64",
+    "dist:mac:universal": "GAPPD_MAC_BUILD=universal npm run prepare:ollama && GAPPD_MAC_BUILD=universal npm run prepare:whisper && GAPPD_MAC_BUILD=universal npm run build && electron-builder --config electron-builder.config.cjs --mac --universal",
+    "dist:dir:mac:universal": "GAPPD_MAC_BUILD=universal npm run prepare:ollama && GAPPD_MAC_BUILD=universal npm run prepare:whisper && GAPPD_MAC_BUILD=universal npm run build && electron-builder --config electron-builder.config.cjs --mac dir --universal",
+    "install:mac": "node ./scripts/install-mac-build.cjs",
     "verify:mac-release": "node ./scripts/verify-mac-release.cjs"
   },
   "dependencies": {

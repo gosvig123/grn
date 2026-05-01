@@ -1,5 +1,6 @@
 BINARY    := gappd
 BUILD_DIR := ./build
+OUTPUT    ?= $(BUILD_DIR)/$(BINARY)
 MODULE    := $(shell grep '^module' go.mod 2>/dev/null | awk '{print $$2}')
 VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS   := -s -w -X $(MODULE)/internal/version.Version=$(VERSION)
@@ -7,11 +8,14 @@ DB_PATH   := ~/.gappd/db.sqlite
 SCHEMA    := ./internal/db/schema.sql
 UNAME_S   := $(shell uname -s)
 
+export MACOSX_DEPLOYMENT_TARGET ?= 13.0
+
 .PHONY: build build-capture ensure-macos run dev db-init db-reset clean install-capture install
 
 build:
-	@mkdir -p $(BUILD_DIR)
-	go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) ./cmd/gappd
+	@mkdir -p $(dir $(OUTPUT))
+	@rm -f $(OUTPUT)
+	go build -ldflags "$(LDFLAGS)" -o $(OUTPUT) ./cmd/gappd
 
 build-capture: ensure-macos
 	@bash capture-helper/build.sh
